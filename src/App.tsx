@@ -12,9 +12,12 @@ import {
   Sparkles, Check, Smartphone, FileJson, 
   ExternalLink, FileCode, CheckCircle2, Image, Dices,
   AlertTriangle, Loader2, X, ChevronRight, ChevronLeft, FileCheck,
-  LayoutGrid, Save, Plus, Database, Edit3, HardDrive, FolderOpen
+  LayoutGrid, Save, Cloud, Plus, Database, Edit3, HardDrive, FolderOpen
 } from 'lucide-react';
 import { CVMemoryManager } from './components/CVMemoryManager.tsx';
+import { auth } from './lib/firebase';
+import { onAuthStateChanged, type User } from 'firebase/auth';
+import { saveCloudCV } from './lib/firestore';
 
 // Safe OKLCH & OKLAB to RGB/RGBA CSS Color Parser to prevent html2canvas crashes on modern CSS colors (like in Tailwind v4)
 function convertOklchToRgb(cssText: string): string {
@@ -149,6 +152,9 @@ export default function App() {
   // Auto-Save States & Timers
   const [isSavingLocal, setIsSavingLocal] = useState<boolean>(false);
   const [lastSavedLocalTime, setLastSavedLocalTime] = useState<string>('');
+  const [user, setUser] = useState<User | null>(null);
+  const [isSavingCloud, setIsSavingCloud] = useState<boolean>(false);
+  const [lastSavedCloudTime, setLastSavedCloudTime] = useState<string>('');
 
   // Sidebar Delay Hover / Leave Timeout Refs
   const leftHoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -347,6 +353,37 @@ export default function App() {
 
     return () => clearTimeout(timer);
   }, [cvData]);
+
+  // Firebase oturum durumunu izle
+  useEffect(() => {
+    if (!auth) return;
+    const unsub = onAuthStateChanged(auth, (current) => {
+      setUser(current);
+    });
+    return () => unsub();
+  }, []);
+
+  // Bulut otomatik yedekleme (giriş yapılmışsa 5 dakikada bir)
+  useEffect(() => {
+    if (!user || !auth || !cvData || !cvData.id) return;
+
+    const interval = setInterval(async () => {
+      setIsSavingCloud(true);
+      try {
+        await saveCloudCV(user.uid, cvData);
+        const now = new Date().toLocaleTimeString([], {
+          hour: '2-digit', minute: '2-digit', second: '2-digit',
+        });
+        setLastSavedCloudTime(now);
+      } catch (err: any) {
+        console.error('Cloud auto-save error:', err);
+      } finally {
+        setIsSavingCloud(false);
+      }
+    }, 5 * 60 * 1000); // 5 dakika
+
+    return () => clearInterval(interval);
+  }, [user, cvData]);
 
   // Show quick status banner
   const triggerAlert = (type: 'success' | 'info' | 'error', text: string) => {
@@ -1232,6 +1269,17 @@ export default function App() {
                   <span>Yerel: Otomatik Aktif</span>
                 )}
               </div>
+              {user && (
+                <div>
+                  {isSavingCloud ? (
+                    <span className="text-blue-400">Buluta Yedekleniyor...</span>
+                  ) : lastSavedCloudTime ? (
+                    <span className="text-teal-400">Bulut: {lastSavedCloudTime} ✓</span>
+                  ) : (
+                    <span>Bulut: 5dk Oto Aktif</span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* ⭐ HIGH-PRIORITY: CV KAYDETME VE GERİ ÇAĞIRMA MERKEZİ */}
@@ -1272,6 +1320,38 @@ export default function App() {
                 </span>
               </button>
             </div>
+
+            {/* Manuel bulut kaydı (yalnızca giriş yapılmışsa) */}
+            {user && (
+              <button
+                onClick={async () => {
+                  if (!auth || !user) return;
+                  setIsSavingCloud(true);
+                  triggerAlert('info', 'Buluta kaydediliyor...');
+                  try {
+                    await saveCloudCV(user.uid, cvData);
+                    const now = new Date().toLocaleTimeString([], {
+                      hour: '2-digit', minute: '2-digit', second: '2-digit',
+                    });
+                    setLastSavedCloudTime(now);
+                    triggerAlert('success', `Buluta kaydedildi (${now})`);
+                  } catch (err: any) {
+                    triggerAlert('error', `Buluta kaydedilemedi: ${err?.message || err}`);
+                  } finally {
+                    setIsSavingCloud(false);
+                  }
+                }}
+                disabled={isSavingCloud}
+                className="cursor-pointer h-8 w-8 bg-[#1E222A] text-teal-400 hover:text-teal-300 border border-teal-500/50 hover:border-teal-400 hover:bg-teal-500/20 rounded-lg flex items-center justify-center transition-all duration-200 shadow-[0_0_8px_rgba(20,184,166,0.15)] hover:shadow-[0_0_12px_rgba(20,184,166,0.3)] active:scale-95 group relative disabled:opacity-50"
+                title={isSavingCloud ? 'Buluta kaydediliyor...' : 'Buluta Kaydet ☁️'}
+              >
+                {isSavingCloud ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Cloud className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                )}
+              </button>
+            )}
 
             <button 
               onClick={() => handleCreateNew()}

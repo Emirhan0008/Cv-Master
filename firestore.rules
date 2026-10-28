@@ -1,0 +1,21 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Kullanıcı yalnızca kendi dokümanına erişebilir.
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+      // Alt koleksiyon: kullanıcının CV'leri
+      match /cvs/{cvId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+
+    // Geri kalan her şey kapalı.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
