@@ -17,6 +17,36 @@ function getAI(): GoogleGenAI {
   });
 }
 
+// Gemini yoğun saatlerde 503/429 dönebiliyor — kısa beklemeyle 3 kez dene.
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function isRetryable(error: any): boolean {
+  const status = error?.status ?? error?.code;
+  const msg = String(error?.message || "").toLowerCase();
+  return (
+    status === 503 ||
+    status === 429 ||
+    msg.includes("unavailable") ||
+    msg.includes("high demand") ||
+    msg.includes("overloaded") ||
+    msg.includes("rate limit")
+  );
+}
+
+async function generateWithRetry(params: any, attempts = 3): Promise<any> {
+  let lastError: any;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await getAI().models.generateContent(params);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryable(error) || i === attempts - 1) break;
+      await sleep(1200 * (i + 1));
+    }
+  }
+  throw lastError;
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -64,7 +94,7 @@ export default async function handler(req: any, res: any) {
       prompt = `İş deneyimi açıklaması:\n${text}\n\nPozisyon / Unvan:\n${context || "Belirtilmedi"}`;
     }
 
-    const response = await getAI().models.generateContent({
+    const response = await generateWithRetry({
       model: AI_MODEL,
       contents: prompt,
       config: { systemInstruction },
@@ -74,6 +104,11 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({ result });
   } catch (error: any) {
     console.error("[AI] optimize-text error:", error);
+    if (isRetryable(error)) {
+      return res
+        .status(503)
+        .json({ error: "Yapay zeka şu anda yoğun. Lütfen birkaç saniye sonra tekrar deneyin." });
+    }
     return res.status(500).json({ error: error.message || "Yapay zeka optimizasyon hatası." });
   }
 }
