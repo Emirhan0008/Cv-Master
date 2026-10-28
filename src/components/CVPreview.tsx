@@ -1163,7 +1163,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
         return (
           <div key="summary" className={getBlockCardClass('summary')}>
             {renderSectionHeader('Profesyonel Özet')}
-            <div className="text-slate-600 leading-relaxed text-justify whitespace-pre-wrap">
+            <div className="text-slate-600 leading-relaxed text-left whitespace-pre-wrap">
               <Editable path={['personalInfo', 'summary']} text={personalInfo.summary} multiline={true} />
             </div>
           </div>
@@ -1718,7 +1718,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   <div className="bg-[#1e293b]/80 py-1.5 px-3 border-l-4 border-amber-550 shadow-inner">
                     <h4 className="font-extrabold text-[10px] tracking-wider uppercase text-amber-500" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>PROFİL</h4>
                   </div>
-                  <div className="text-[11px] leading-relaxed text-justify text-slate-300">
+                  <div className="text-[11px] leading-relaxed text-left text-slate-300">
                     <Editable path={['personalInfo', 'summary']} text={personalInfo.summary} multiline={true} />
                   </div>
                 </div>
@@ -2043,7 +2043,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                       </h3>
                       <div className="w-16 h-[1.5px] bg-slate-300 mx-auto mt-1.5 opacity-60" />
                     </div>
-                    <div className="text-slate-700 leading-relaxed text-justify text-xs whitespace-pre-wrap font-serif">
+                    <div className="text-slate-700 leading-relaxed text-left text-xs whitespace-pre-wrap font-serif">
                       <Editable path={['personalInfo', 'summary']} text={personalInfo.summary} multiline={true} />
                     </div>
                   </div>
@@ -2271,7 +2271,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                 {personalInfo.summary && (
                   <div>
                     {renderSectionHeader('Hakkımda')}
-                    <div className="text-slate-600 leading-relaxed text-justify text-xs whitespace-pre-wrap mt-2">
+                    <div className="text-slate-600 leading-relaxed text-left text-xs whitespace-pre-wrap mt-2">
                       <Editable path={['personalInfo', 'summary']} text={personalInfo.summary} multiline={true} />
                     </div>
                   </div>

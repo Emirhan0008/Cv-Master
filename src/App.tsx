@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 import { CVData } from './types';
 import { INITIAL_CV_SAMPLES } from './data';
@@ -12,11 +12,9 @@ import {
   Sparkles, Check, Smartphone, FileJson, 
   ExternalLink, FileCode, CheckCircle2, Image, Dices,
   AlertTriangle, Loader2, X, ChevronRight, ChevronLeft, FileCheck,
-  LayoutGrid, Save, Cloud, Plus, Database, Edit3, HardDrive, FolderOpen
+  LayoutGrid, Save, Plus, Database, Edit3, HardDrive, FolderOpen
 } from 'lucide-react';
 import { CVMemoryManager } from './components/CVMemoryManager.tsx';
-import { auth } from './lib/firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
 
 // Safe OKLCH & OKLAB to RGB/RGBA CSS Color Parser to prevent html2canvas crashes on modern CSS colors (like in Tailwind v4)
 function convertOklchToRgb(cssText: string): string {
@@ -148,14 +146,9 @@ export default function App() {
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState<boolean>(false);
   const [isRightSidebarHovered, setIsRightSidebarHovered] = useState<boolean>(false);
 
-  // User Auth State
-  const [user, setUser] = useState<User | null>(null);
-
   // Auto-Save States & Timers
   const [isSavingLocal, setIsSavingLocal] = useState<boolean>(false);
   const [lastSavedLocalTime, setLastSavedLocalTime] = useState<string>('');
-  const [isSavingCloud, setIsSavingCloud] = useState<boolean>(false);
-  const [lastSavedCloudTime, setLastSavedCloudTime] = useState<string>('');
 
   // Sidebar Delay Hover / Leave Timeout Refs
   const leftHoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -174,14 +167,6 @@ export default function App() {
       if (rightHoverTimeoutRef.current) clearTimeout(rightHoverTimeoutRef.current);
       if (rightLeaveTimeoutRef.current) clearTimeout(rightLeaveTimeoutRef.current);
     };
-  }, []);
-
-  // Monitor Auth State
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (current) => {
-      setUser(current);
-    });
-    return () => unsubscribe();
   }, []);
 
   // Track and capture history snapshots with debounce (500ms) for undo functionality
@@ -362,46 +347,6 @@ export default function App() {
 
     return () => clearTimeout(timer);
   }, [cvData]);
-
-  // 5-minute Cloud Auto-Save (when authenticated)
-  useEffect(() => {
-    if (!user || !cvData || !cvData.id) return;
-
-    const interval = setInterval(async () => {
-      setIsSavingCloud(true);
-      try {
-        const idToken = await user.getIdToken();
-        const res = await fetch('/api/user/save-cv', {
-          method: 'POST',
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${idToken}`
-          },
-          body: JSON.stringify({
-            localId: cvData.id,
-            title: cvData.title || cvData.personalInfo.name || 'İsimsiz Özgeçmiş',
-            data: cvData,
-          })
-        });
-
-        if (!res.ok) {
-          const errMsg = await res.text();
-          throw new Error(errMsg || 'Sunucu hatası');
-        }
-
-        const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        setLastSavedCloudTime(now);
-        triggerAlert('success', `☁️ Buluta otomatik yedekleme başarılı! (${now})`);
-      } catch (err: any) {
-        console.error("Cloud auto-save error:", err);
-        triggerAlert('error', `🚨 BULUTA OTOMATİK KAYDETME BAŞARISIZ! Lütfen internet bağlantınızı veya oturumunuzu kontrol edin. Hata: ${err.message || err}`);
-      } finally {
-        setIsSavingCloud(false);
-      }
-    }, 5 * 60 * 1000); // 5 minutes
-
-    return () => clearInterval(interval);
-  }, [user, cvData]);
 
   // Show quick status banner
   const triggerAlert = (type: 'success' | 'info' | 'error', text: string) => {
@@ -799,10 +744,14 @@ export default function App() {
 
   // Core capture function
   const captureCVToCanvas = async (sourceElement: HTMLElement): Promise<HTMLCanvasElement> => {
+    // Fontların hazır olmasını garantile (ekran ile PDF metrikleri aynı olsun)
     try {
-      if (document.fonts && document.fonts.ready) {
-        await document.fonts.ready;
-      }
+      const families = ['Inter', 'Space Grotesk', 'Playfair Display', 'JetBrains Mono'];
+      const weights = [300, 400, 500, 600, 700];
+      await Promise.all(
+        families.flatMap((f) => weights.map((w) => document.fonts.load(`${w} 16px "${f}"`).catch(() => undefined)))
+      );
+      await document.fonts.ready;
     } catch (e) {
       // Ignore font errors
     }
@@ -852,10 +801,6 @@ export default function App() {
           // Stabilizer styles
           const styleEl = clonedDoc.createElement('style');
           styleEl.innerHTML = `
-            * {
-              text-rendering: geometricPrecision !important;
-              -webkit-font-smoothing: antialiased !important;
-            }
             .no-print, [data-no-print="true"] {
               display: none !important;
             }
@@ -868,10 +813,19 @@ export default function App() {
           `;
           clonedDoc.head.appendChild(styleEl);
 
-          // Convert oklch/oklab in styles
+          // Modern CSS renk fonksiyonlarını (oklch/oklab/color-mix/color()) güvenli RGB'ye çevir.
+          // 1) <style> etiketlerinin metni
           clonedDoc.querySelectorAll('style').forEach((tag) => {
-            if (tag.textContent && (tag.textContent.includes('oklch') || tag.textContent.includes('oklab'))) {
+            if (tag.textContent && /oklch|oklab|color-mix|color\(/i.test(tag.textContent)) {
               tag.textContent = convertOklchToRgb(tag.textContent);
+            }
+          });
+
+          // 2) Inline stiller (html2canvas'ın SVG'lere kopyaladığı computed değerler dahil)
+          clonedDoc.querySelectorAll<HTMLElement>('[style]').forEach((el) => {
+            const s = el.getAttribute('style');
+            if (s && /oklch|oklab|color-mix|color\(/i.test(s)) {
+              el.setAttribute('style', convertOklchToRgb(s));
             }
           });
 
@@ -927,6 +881,58 @@ export default function App() {
     }
   };
 
+  // Alttaki boş (beyaz) satırları kırp — A4'ü aşan saydam/fazla yükseklik yüzünden
+  // oluşan boş ikinci sayfayı engeller.
+  const trimBlankBottom = (src: HTMLCanvasElement): HTMLCanvasElement => {
+    const ctx = src.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return src;
+
+    const { width, height } = src;
+    let data: Uint8ClampedArray;
+    try {
+      data = ctx.getImageData(0, 0, width, height).data;
+    } catch {
+      return src; // tainted canvas vs. — kırpmadan devam
+    }
+
+    const WHITE = 246; // beyaz eşiği (hafif gri gölgeler korunsun)
+    let lastContentRow = 0;
+
+    for (let y = height - 1; y >= 0; y--) {
+      const rowStart = y * width * 4;
+      let hasContent = false;
+      for (let x = 0; x < width; x += 2) {
+        const i = rowStart + x * 4;
+        if (
+          data[i] < WHITE ||
+          data[i + 1] < WHITE ||
+          data[i + 2] < WHITE ||
+          data[i + 3] < WHITE
+        ) {
+          hasContent = true;
+          break;
+        }
+      }
+      if (hasContent) {
+        lastContentRow = y;
+        break;
+      }
+    }
+
+    const newHeight = Math.min(height, lastContentRow + 1);
+    if (newHeight >= height - 1) return src; // kırpılacak bir şey yok
+
+    const out = document.createElement('canvas');
+    out.width = width;
+    out.height = newHeight;
+    const outCtx = out.getContext('2d');
+    if (!outCtx) return src;
+    outCtx.fillStyle = '#ffffff';
+    outCtx.fillRect(0, 0, width, newHeight);
+    outCtx.drawImage(src, 0, 0, width, newHeight, 0, 0, width, newHeight);
+    return out;
+  };
+
   // Generate High Resolution A4 Direct PDF
   const generateDirectPdf = async () => {
     setIsGeneratingPdf(true);
@@ -941,14 +947,7 @@ export default function App() {
         return;
       }
 
-      const canvas = await captureCVToCanvas(element);
-
-      let imgData: string;
-      try {
-        imgData = canvas.toDataURL('image/jpeg', 0.98);
-      } catch (e) {
-        imgData = canvas.toDataURL('image/png');
-      }
+      const canvas = trimBlankBottom(await captureCVToCanvas(element));
 
       const pdf = new jsPDF({
         orientation: 'portrait',
@@ -957,39 +956,68 @@ export default function App() {
         compress: true,
       });
 
-      const pageWidth = 210; // A4 width in mm
-      const pageHeight = 297; // A4 height in mm
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const pageWidth = 210; // A4 genişliği (mm)
+      const pageHeight = 297; // A4 yüksekliği (mm)
+      const mmPerPx = pageWidth / canvas.width; // yatay/dikey oran korunur
+      const pageHeightPx = pageHeight / mmPerPx; // bir A4 sayfasına sığan piksel yüksekliği
 
-      if (imgHeight <= pageHeight + 2) {
-        // Single Page CV
-        pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, Math.min(imgHeight, pageHeight), undefined, 'FAST');
-      } else {
-        // Multi-page CV: Slice pages cleanly
-        let heightLeft = imgHeight;
-        let position = 0;
+      // Boş sayfa üretmemek için: sona kalan dilim 3 mm'den küçükse basma
+      const minSlicePx = 3 / mmPerPx;
 
-        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-        heightLeft -= pageHeight;
+      let offsetY = 0;
+      let pageIndex = 0;
 
-        while (heightLeft > 5) {
-          position -= pageHeight;
-          pdf.addPage();
-          pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-          heightLeft -= pageHeight;
-        }
+      while (offsetY < canvas.height) {
+        const remaining = canvas.height - offsetY;
+        if (remaining < minSlicePx) break;
+
+        const sliceH = Math.min(pageHeightPx, remaining);
+
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = Math.max(1, Math.ceil(sliceH));
+
+        const ctx = pageCanvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas 2D bağlamı oluşturulamadı.');
+
+        // Beyaz zemin (JPEG şeffaflığı siyaha çevirmesin)
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+
+        // Kaynak dilimi birebir oranda kopyala (ölçekleme yok => bozulma yok)
+        ctx.drawImage(
+          canvas,
+          0, offsetY, canvas.width, sliceH,
+          0, 0, canvas.width, sliceH,
+        );
+
+        if (pageIndex > 0) pdf.addPage();
+
+        const sliceData = pageCanvas.toDataURL('image/jpeg', 0.98);
+        pdf.addImage(
+          sliceData,
+          'JPEG',
+          0,
+          0,
+          pageWidth,
+          sliceH * mmPerPx, // son sayfa artığı da tam yüksekliğinde basılır
+          undefined,
+          'FAST',
+        );
+
+        offsetY += pageHeightPx;
+        pageIndex++;
       }
 
       const rawName = cvData.personalInfo?.name || 'ozgecmis';
       const cleanName = rawName.toLowerCase().replace(/[^a-z0-9ğüşıöç]/gi, '-').replace(/-+/g, '-');
       const fileName = `${cleanName}-cv.pdf`;
 
-      // 1. Direct PDF Save
-      pdf.save(fileName);
-
-      // 2. Blob URL fallback download trigger
+      // Tek indirme: pdf.save başarısız olursa blob yedeğine düş
       try {
+        pdf.save(fileName);
+      } catch (saveErr) {
+        console.warn('pdf.save başarısız, blob indirmesi deneniyor:', saveErr);
         const blob = pdf.output('blob');
         const blobUrl = URL.createObjectURL(blob);
         const downloadLink = document.createElement('a');
@@ -1002,8 +1030,6 @@ export default function App() {
           document.body.removeChild(downloadLink);
           URL.revokeObjectURL(blobUrl);
         }, 5000);
-      } catch (blobErr) {
-        console.warn('Blob fallback skipped:', blobErr);
       }
 
       triggerAlert('success', 'A4 PDF dosyası başarıyla oluşturuldu ve indirildi! 📄✨');
@@ -1206,17 +1232,6 @@ export default function App() {
                   <span>Yerel: Otomatik Aktif</span>
                 )}
               </div>
-              {user && (
-                <div>
-                  {isSavingCloud ? (
-                    <span className="text-blue-400">Buluta Yedekleniyor...</span>
-                  ) : lastSavedCloudTime ? (
-                    <span className="text-teal-400">Bulut: {lastSavedCloudTime} ✓</span>
-                  ) : (
-                    <span>Bulut: 5dk Oto Aktif</span>
-                  )}
-                </div>
-              )}
             </div>
 
             {/* ⭐ HIGH-PRIORITY: CV KAYDETME VE GERİ ÇAĞIRMA MERKEZİ */}
@@ -1257,53 +1272,6 @@ export default function App() {
                 </span>
               </button>
             </div>
-
-            {/* Manual Save: Cloud Postgres (Only if user logged in) */}
-            {user && (
-              <button 
-                onClick={async () => {
-                  setIsSavingCloud(true);
-                  triggerAlert('info', 'Değişiklikler bulut veritabanına kaydediliyor...');
-                  try {
-                    const idToken = await user.getIdToken();
-                    const res = await fetch('/api/user/save-cv', {
-                      method: 'POST',
-                      headers: {
-                        "Content-Type": "application/json",
-                        "Authorization": `Bearer ${idToken}`
-                      },
-                      body: JSON.stringify({
-                        localId: cvData.id,
-                        title: cvData.title || cvData.personalInfo.name || 'İsimsiz Özgeçmiş',
-                        data: cvData,
-                      })
-                    });
-
-                    if (!res.ok) {
-                      throw new Error(await res.text());
-                    }
-
-                    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                    setLastSavedCloudTime(now);
-                    triggerAlert('success', `Buluta manuel kaydetme başarılı! (${now})`);
-                  } catch (err: any) {
-                    console.error("Manual cloud save error:", err);
-                    triggerAlert('error', `Buluta kaydetme başarısız: ${err.message || err}`);
-                  } finally {
-                    setIsSavingCloud(false);
-                  }
-                }}
-                disabled={isSavingCloud}
-                className="cursor-pointer h-8 w-8 bg-[#1E222A] text-blue-400 hover:text-blue-300 border border-blue-500/50 hover:border-blue-400 hover:bg-blue-500/20 rounded-lg flex items-center justify-center transition-all duration-200 shadow-[0_0_8px_rgba(59,130,246,0.15)] hover:shadow-[0_0_12px_rgba(59,130,246,0.3)] active:scale-95 group relative disabled:opacity-50"
-                title={isSavingCloud ? 'Buluta kaydediliyor...' : 'Bulut Kayıt ☁️'}
-              >
-                {isSavingCloud ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Cloud className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                )}
-              </button>
-            )}
 
             <button 
               onClick={() => handleCreateNew()}
@@ -1552,6 +1520,7 @@ export default function App() {
 
           {/* Orta Panel (Live Preview Page) - occupies remaining space relative to active drawers */}
           <div 
+            id="cv-print-shell"
             className="flex-1 h-full flex flex-col min-h-0 bg-[#0F1115] relative overflow-hidden"
             style={{
               paddingLeft: (isSidebarOpen || isSidebarHovered) ? '420px' : '0px',

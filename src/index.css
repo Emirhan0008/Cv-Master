@@ -28,14 +28,12 @@
     overflow: visible !important;
   }
 
-  /* Reset all layout wrappers that might constrain height or hide overflow */
-  #root,
-  main,
-  aside,
-  div {
+  /* Reset only the CV tree so the printed page keeps its real geometry */
+  #cv-zoom-wrapper,
+  #cv-zoom-wrapper *,
+  #cv-preview-page,
+  #cv-preview-page * {
     overflow: visible !important;
-    height: auto !important;
-    min-height: 0 !important;
     max-height: none !important;
   }
 
@@ -60,6 +58,13 @@
     position: static !important;
   }
 
+  /* Drawer açıkken uygulanan inline padding'i yazdırmada sıfırla */
+  #cv-print-shell {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    overflow: visible !important;
+  }
+
   #cv-preview-page {
     border: none !important;
     box-shadow: none !important;
@@ -77,7 +82,6 @@
   }
 
   /* Ensure items avoid awkward page breaks across pages */
-  #cv-preview-page .group,
   #cv-preview-page [id*="skill-item"],
   #cv-preview-page .break-inside-avoid {
     break-inside: avoid !important;

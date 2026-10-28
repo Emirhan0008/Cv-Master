@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import { processImportData } from '../utils/dataParser';
 import { PRESETS } from '../utils/presets';
-import CloudSyncManager from './CloudSyncManager.tsx';
 import { CVMemoryManager } from './CVMemoryManager.tsx';
 
 interface CVFormProps {
@@ -2992,10 +2991,10 @@ export default function CVForm({
                 className="flex justify-between items-center bg-[#1A1D23] hover:bg-[#20242B] px-3.5 py-2.5 cursor-pointer select-none group transition-all"
               >
                 <div className="flex items-center gap-2">
-                  <Cloud className="w-4 h-4 text-teal-400 group-hover:scale-110 transition-transform" />
+                  <HardDrive className="w-4 h-4 text-teal-400 group-hover:scale-110 transition-transform" />
                   <div>
-                    <h4 className="font-extrabold text-[#E0E2E6] text-xs uppercase tracking-wider">Bulut Entegrasyon Merkezi</h4>
-                    <p className="text-[9px] text-gray-400">PostgreSQL ve Google Drive Canlı Yedekleme</p>
+                    <h4 className="font-extrabold text-[#E0E2E6] text-xs uppercase tracking-wider">Yedekleme</h4>
+                    <p className="text-[9px] text-gray-400">Tarayıcı belleği • JSON dışa/içe aktarma</p>
                   </div>
                 </div>
                 {mgmtSectionCloud ? (
@@ -3007,11 +3006,17 @@ export default function CVForm({
 
               {mgmtSectionCloud && (
                 <div className="p-3 border-t border-[#2D3139]/40 animate-fade-in space-y-3">
-                  <CloudSyncManager
-                    cvData={cvData}
-                    triggerAlert={triggerAlert}
-                    onImportBackup={onImportBackup}
-                  />
+                  <p className="text-[10px] leading-relaxed text-gray-400">
+                    Tüm CV'leriniz bu tarayıcının yerel deposunda (<code className="text-teal-400">localStorage</code>) saklanır.
+                    Yedek almak veya başka bir cihaza taşımak için aşağıdaki <strong className="text-[#E0E2E6]">JSON Dışa Aktar</strong> özelliğini kullanın.
+                  </p>
+                  <button
+                    onClick={onExportAllCVs}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    <HardDrive className="w-3.5 h-3.5" />
+                    Tüm CV'leri JSON olarak indir
+                  </button>
                 </div>
               )}
             </div>
