@@ -1,0 +1,6 @@
+{
+  "name": "CV-Master",
+  "description": "Cross-platform uyumlu, gelişmiş şablon seçenekli ve çoklu format dışa aktarma mimarisine sahip CV hazırlama aracı.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

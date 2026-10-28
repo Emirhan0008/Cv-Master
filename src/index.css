@@ -1,0 +1,165 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,420;0,600;0,700;1,400&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-inter: "Inter", sans-serif;
+  --font-space-grotesk: "Space Grotesk", sans-serif;
+  --font-playfair: "Playfair Display", serif;
+  --font-jetbrains: "JetBrains Mono", monospace;
+}
+
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+@media print {
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    width: 210mm !important;
+    height: auto !important;
+    min-height: 297mm !important;
+    overflow: visible !important;
+  }
+
+  /* Reset all layout wrappers that might constrain height or hide overflow */
+  #root,
+  main,
+  aside,
+  div {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+
+  /* Hide app navigation, drawers, sidebars, buttons, alerts */
+  header,
+  footer,
+  aside,
+  button,
+  .no-print,
+  [data-no-print="true"] {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  #cv-zoom-wrapper {
+    transform: none !important;
+    width: 210mm !important;
+    height: auto !important;
+    min-height: 297mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    position: static !important;
+  }
+
+  #cv-preview-page {
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 auto !important;
+    width: 210mm !important;
+    min-width: 210mm !important;
+    max-width: 210mm !important;
+    min-height: 297mm !important;
+    height: auto !important;
+    box-sizing: border-box !important;
+    overflow: visible !important;
+    page-break-after: auto;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Ensure items avoid awkward page breaks across pages */
+  #cv-preview-page .group,
+  #cv-preview-page [id*="skill-item"],
+  #cv-preview-page .break-inside-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #cv-preview-page [contenteditable] {
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    border-bottom: none !important;
+    padding: 0 !important;
+  }
+}
+
+/* Kutucuk ve metin taşmalarını önleyen global kurallar */
+#cv-preview-page,
+#cv-preview-page * {
+  box-sizing: border-box;
+}
+
+#cv-preview-page {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+/* Uzun metinler, e-postalar ve linkler için sığdırma koruması */
+#cv-preview-page [contenteditable] {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+#cv-preview-page .break-anywhere,
+#cv-preview-page [id*="email"],
+#cv-preview-page [id*="website"],
+#cv-preview-page a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+@keyframes custom-glowing-pulse-teal {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.8), 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+  }
+  50% {
+    transform: translateY(0) scale(1.08);
+    box-shadow: 0 0 15px 6px rgba(20, 184, 166, 0.4), 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+  }
+}
+
+@keyframes custom-glowing-pulse-fuchsia {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 0 rgba(217, 70, 239, 0.8), 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+  }
+  50% {
+    transform: translateY(0) scale(1.08);
+    box-shadow: 0 0 15px 6px rgba(217, 70, 239, 0.4), 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+  }
+}
+
+.animate-glow-teal {
+  animation: custom-glowing-pulse-teal 1.6s infinite ease-in-out;
+}
+
+.animate-glow-fuchsia {
+  animation: custom-glowing-pulse-fuchsia 1.6s infinite ease-in-out;
+}
+
+
