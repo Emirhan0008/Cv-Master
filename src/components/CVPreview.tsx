@@ -1487,7 +1487,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
             minWidth: '794px',
             maxWidth: '794px',
           }}
-          className={`min-h-[297mm] origin-center flex flex-col justify-between align-stretch text-slate-800 ${fontClass} ${fontSizeClass} ${lineHeightClass} ${styles.shadowIntensity !== 'none' ? 'shadow-xl' : 'border border-slate-200 shadow-sm'} ${actualPaddingClass} tracking-normal print:p-0 print:shadow-none print:border-none print:w-[210mm] print:min-w-[210mm] print:max-w-[210mm] relative overflow-hidden`}
+          className={`min-h-[297mm] origin-center flex flex-col justify-between align-stretch text-slate-800 ${fontClass} ${fontSizeClass} ${lineHeightClass} ${styles.shadowIntensity !== 'none' ? 'shadow-xl' : 'border border-slate-200 shadow-sm'} ${actualPaddingClass} tracking-normal print:shadow-none print:border-none print:w-[210mm] print:min-w-[210mm] print:max-w-[210mm] relative overflow-hidden`}
         >
         {styles.template === 'depth3d' && (
           <div className="absolute inset-0 overflow-hidden pointer-events-none select-none z-0 opacity-50 no-print">

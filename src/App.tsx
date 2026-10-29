@@ -1078,6 +1078,230 @@ export default function App() {
     }
   };
 
+  // ============================================================
+  // ATS UYUMLU PDF (gerçek metin katmanı)
+  // CV'yi ayrı bir iframe'e klonlayıp tarayıcının kendi baskı motoruyla
+  // "PDF olarak kaydet" akışına verir. Böylece PDF içinde seçilebilir,
+  // aranabilir gerçek metin bulunur (işe alım sistemleri okuyabilir).
+  // ============================================================
+  const generateAtsPdf = async () => {
+    setIsGeneratingPdf(true);
+    setShowPdfModal(false);
+
+    try {
+      const element = await getTargetPreviewElement();
+      if (!element) {
+        triggerAlert('error', 'Önizleme alanı bulunamadı. Lütfen Canlı Önizleme sekmesine geçip tekrar deneyin.');
+        return;
+      }
+
+      // Yazı tipi metrikleri ekrandakiyle aynı olsun
+      try {
+        const families = ['Inter', 'Space Grotesk', 'Playfair Display', 'JetBrains Mono'];
+        const weights = [300, 400, 500, 600, 700];
+        await Promise.all(
+          families.flatMap((f) =>
+            weights.map((w) => document.fonts.load(`${w} 16px "${f}"`).catch(() => undefined)),
+          ),
+        );
+        await document.fonts.ready;
+      } catch {
+        /* yazı tipi hatası kritik değil */
+      }
+
+      // Inline görselleri data URL'e çevir (iframe içinde erişilebilsin)
+      const restoreImages = await inlineImagesForCapture(element);
+
+      // Ekranda görünen dolguyu (padding) ölç — aşağıda `print:p-0` sınıfı
+      // basım sırasında bunu sıfırlıyor, sayfa kenar boşluğu kayboluyordu.
+      const screenStyle = window.getComputedStyle(element);
+      const screenPadding = [
+        screenStyle.paddingTop,
+        screenStyle.paddingRight,
+        screenStyle.paddingBottom,
+        screenStyle.paddingLeft,
+      ].join(' ');
+
+      const clone = element.cloneNode(true) as HTMLElement;
+
+      // Düzenleme artefaktlarını temizle
+      clone.querySelectorAll('[contenteditable]').forEach((el) => {
+        el.removeAttribute('contenteditable');
+        el.removeAttribute('data-editable');
+      });
+      clone.querySelectorAll('[data-editable="true"]').forEach((el) => {
+        el.removeAttribute('data-editable');
+      });
+      clone.querySelectorAll('.no-print, [data-no-print="true"]').forEach((el) => el.remove());
+
+      // Ekran dönüşümlerini sıfırla — sayfa gerçek A4 ölçüsünde basılsın
+      Object.assign(clone.style, {
+        transform: 'none',
+        width: '210mm',
+        minWidth: '0',
+        maxWidth: '210mm',
+        height: 'auto',
+        minHeight: '0',
+        maxHeight: 'none',
+        margin: '0',
+        boxShadow: 'none',
+        borderRadius: '0',
+        overflow: 'visible',
+        position: 'static',
+      });
+
+      // Dolguyu inline + !important olarak geri ver: `print:p-0` sınıfını yener
+      clone.style.setProperty('padding', screenPadding, 'important');
+
+      // Stil toplama: aynı-origin sheet'leri inline et, cross-origin olanları <link> ile ekle
+      const inlineCss: string[] = [];
+      const externalLinks: string[] = [];
+
+      Array.from(document.styleSheets).forEach((sheet) => {
+        try {
+          const rules = Array.from(sheet.cssRules || [])
+            .map((r) => r.cssText)
+            .join('\n');
+          if (rules) inlineCss.push(rules);
+        } catch {
+          // CORS nedeniyle okunamıyor (örn. Google Fonts) — link olarak ekle
+          const href = (sheet as CSSStyleSheet).href;
+          if (href) externalLinks.push(href);
+        }
+      });
+
+      const html = `<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<title>${(cvData.personalInfo?.name || 'Ozgecmis').replace(/[<>]/g, '')} - CV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+${externalLinks.map((h) => `<link rel="stylesheet" href="${h}" />`).join('\n')}
+<style>
+  @page { size: A4 portrait; margin: 0; }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  body { width: 210mm; }
+  #cv-ats-root {
+    width: 210mm;
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+  }
+  #cv-ats-root * {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  /* Sayfa kırılmalarında başlıkları yalnız bırakma */
+  #cv-ats-root h1, #cv-ats-root h2, #cv-ats-root h3, #cv-ats-root h4 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  #cv-ats-root .break-inside-avoid,
+  #cv-ats-root [id*="skill-item"] {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+</style>
+${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
+</head>
+<body><div id="cv-ats-root">${clone.outerHTML}</div></body>
+</html>`;
+
+      // Ekran dışında konumlanmış iframe. `opacity:0` bazı tarayıcılarda
+      // boş sayfa bastığı için saydamlık yerine sadece konum kullanılıyor.
+      const iframe = document.createElement('iframe');
+      iframe.setAttribute('aria-hidden', 'true');
+      iframe.style.cssText =
+        'position:fixed;left:-10000px;top:0;width:210mm;height:297mm;border:0;pointer-events:none;';
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentDocument;
+      const win = iframe.contentWindow;
+      if (!doc || !win) {
+        iframe.remove();
+        restoreImages();
+        throw new Error('Yazdırma çerçevesi oluşturulamadı.');
+      }
+
+      doc.open();
+      doc.write(html);
+      doc.close();
+
+      // Belge + yazı tipleri + görseller hazır olsun
+      await new Promise<void>((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (!done) {
+            done = true;
+            resolve();
+          }
+        };
+        iframe.addEventListener('load', finish, { once: true });
+        setTimeout(finish, 2500);
+      });
+
+      // Dış stil dosyaları (Google Fonts) yüklenmeden basılırsa yazı tipi
+      // sistem varsayılanına düşer — bu yüzden link'lerin bitmesini bekle.
+      const styleLinks = Array.from(doc.querySelectorAll('link[rel="stylesheet"]'));
+      await Promise.all(
+        styleLinks.map(
+          (link) =>
+            new Promise<void>((resolve) => {
+              const ready = (link as HTMLLinkElement).sheet;
+              if (ready) return resolve();
+              link.addEventListener('load', () => resolve(), { once: true });
+              link.addEventListener('error', () => resolve(), { once: true });
+              setTimeout(resolve, 4000);
+            }),
+        ),
+      );
+
+      try {
+        await (doc as any).fonts?.ready;
+      } catch {
+        /* yoksay */
+      }
+
+      const images = Array.from(doc.images || []);
+      await Promise.all(
+        images.map(
+          (img) =>
+            new Promise<void>((resolve) => {
+              if (img.complete) return resolve();
+              img.addEventListener('load', () => resolve(), { once: true });
+              img.addEventListener('error', () => resolve(), { once: true });
+              setTimeout(resolve, 3000);
+            }),
+        ),
+      );
+
+      // Baskı diyaloğunu aç
+      win.focus();
+      win.print();
+
+      triggerAlert(
+        'success',
+        'Yazdırma penceresi açıldı. Hedef olarak "PDF olarak kaydet" seçin — metin seçilebilir ve ATS uyumlu olacak. 📄',
+      );
+
+      // Kullanıcı diyaloğu kapatana kadar iframe'i tut
+      setTimeout(() => iframe.remove(), 120000);
+      restoreImages();
+    } catch (err: any) {
+      console.error('ATS PDF error:', err);
+      triggerAlert('error', `ATS PDF oluşturulamadı: ${err?.message || 'Lütfen tekrar deneyin.'}`);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   // High Quality Native PDF Print Trigger
   const runNativePrint = () => {
     setShowPdfModal(false);
@@ -1391,10 +1615,10 @@ export default function App() {
             {/* Action Group 2: Document Export Outputs */}
             <div className="flex items-center bg-[#1A1D23] border border-[#2D3139] rounded-lg p-0.5 shrink-0" title="Veri Çıktısı Alma Motoru">
               <button
-                onClick={generateDirectPdf}
+                onClick={generateAtsPdf}
                 disabled={isGeneratingPdf}
                 className="px-3.5 py-1.5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-extrabold text-[11px] rounded-md flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
-                title="Tek Tıkla Doğrudan A4 PDF İndir"
+                title="ATS uyumlu PDF: metin seçilebilir ve işe alım sistemleri okuyabilir. Açılan pencerede Hedef → 'PDF olarak kaydet' seçin."
               >
                 {isGeneratingPdf ? (
                   <>
@@ -1405,6 +1629,14 @@ export default function App() {
                     <Download className="w-3.5 h-3.5" /> PDF İndir
                   </>
                 )}
+              </button>
+              <button
+                onClick={generateDirectPdf}
+                disabled={isGeneratingPdf}
+                className="p-1.5 text-gray-300 hover:text-white hover:bg-white/10 rounded-md transition-all cursor-pointer disabled:opacity-50"
+                title="Görsel PDF (birebir görünüm): şablon ekran görüntüsü gibi basılır. Metin seçilemez, ATS okuyamaz."
+              >
+                <Image className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={triggerPdfPrint}
@@ -1737,41 +1969,55 @@ export default function App() {
               <div className="grid grid-cols-1 gap-3.5">
                 
                 {/* Method 1: Client-Side Direct High-DPI compiled PDF (FOOLPROOF) */}
+                {/* Method 1: ATS-uyumlu metin PDF (ÖNERİLEN) */}
                 <button
-                  onClick={generateDirectPdf}
-                  className="p-4 rounded-xl border border-teal-500/30 bg-teal-950/20 hover:bg-teal-950/40 hover:border-teal-400 text-left transition relative group group-hover:shadow-[0_0_15px_rgba(20,184,166,0.15)] flex flex-col"
+                  onClick={generateAtsPdf}
+                  className="p-4 rounded-xl border border-emerald-500/40 bg-emerald-950/20 hover:bg-emerald-950/40 hover:border-emerald-400 text-left transition relative group flex flex-col"
                 >
                   <div className="flex items-center justify-between w-full">
                     <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-extrabold uppercase bg-teal-500/10 text-teal-400 px-2 py-0.5 rounded border border-teal-500/20">
-                        Seçenek 1 - En Pratik & Güvenli
+                      <span className="text-[9px] font-extrabold uppercase bg-emerald-500/15 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/25">
+                        Önerilen - ATS Uyumlu
                       </span>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-teal-500 group-hover:translate-x-1 transition-transform" />
+                    <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-1 transition-transform" />
                   </div>
-                  <h4 className="font-bold text-white text-sm mt-2">Doğrudan Cihaza PDF İndir</h4>
+                  <h4 className="font-bold text-white text-sm mt-2">Metin Tabanlı PDF (İşe Alım Sistemleri Okur)</h4>
                   <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">
-                    Sistem yazıcı sürücülerinden bağımsız olarak, şablon verinizi doğrudan A4 PDF dosyası haline getirir. Tek tıkla kusursuz cihaz klonlaması sağlar. (Tavsiye Edilen)
+                    Gerçek metin katmanı ile üretilir: yazılar seçilebilir, aranabilir ve
+                    <strong className="text-emerald-300"> ATS (aday takip sistemleri) tarafından okunabilir</strong>.
+                    Açılan yazdırma penceresinde Hedef → <strong>"PDF olarak kaydet"</strong>,
+                    arka plan grafikleri <strong>açık</strong>, kenar boşluğu <strong>yok</strong> seçin.
                   </p>
                 </button>
 
-                {/* Method 2: System Browser Printer (VECTOR SELECTABLE) */}
+                {/* Method 2: Görsel PDF (birebir görünüm) */}
                 <button
-                  onClick={runNativePrint}
-                  className="p-4 rounded-xl border border-[#2D3139] bg-[#1A1D23] hover:bg-[#20242E] hover:border-gray-500 text-left transition flex flex-col"
+                  onClick={generateDirectPdf}
+                  className="p-4 rounded-xl border border-teal-500/30 bg-teal-950/20 hover:bg-teal-950/40 hover:border-teal-400 text-left transition relative group flex flex-col"
                 >
                   <div className="flex items-center justify-between w-full">
-                    <span className="text-[9px] font-extrabold uppercase bg-gray-500/10 text-gray-400 px-2 py-0.5 rounded border border-[#2D3139]">
-                      Seçenek 2 - Vektörel Metinler
+                    <span className="text-[9px] font-extrabold uppercase bg-teal-500/10 text-teal-400 px-2 py-0.5 rounded border border-teal-500/20">
+                      Görsel PDF - Birebir Görünüm
                     </span>
-                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                    <ChevronRight className="w-4 h-4 text-teal-500 group-hover:translate-x-1 transition-transform" />
                   </div>
-                  <h4 className="font-bold text-white text-sm mt-2">Tarayıcı Yazdırma Penceresini Aç</h4>
+                  <h4 className="font-bold text-white text-sm mt-2">Doğrudan İndir (Görüntü Tabanlı)</h4>
                   <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">
-                    Tarayıcınızın yerel yazıcı diyaloğunu açar. Hedef olarak <strong>"PDF Olarak Kaydet"</strong> seçilmeli, arka plan grafikleri kutusu <strong>açık</strong>, kenar boşlukları ise <strong>yok / sıfır</strong> olmalıdır.
+                    Şablonu ekran görüntüsü gibi birebir basar, tasarım asla bozulmaz.
+                    Ancak <strong className="text-amber-300">metin seçilemez ve ATS okuyamaz</strong> —
+                    yalnızca elle inceleyen biri için uygundur.
                   </p>
                 </button>
 
+              </div>
+
+              <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3">
+                <p className="text-[10px] leading-relaxed text-amber-200/80">
+                  <strong>Hangisini seçmeliyim?</strong> Online başvuru (LinkedIn, kariyer siteleri, şirket portalları)
+                  için mutlaka <strong>ATS uyumlu</strong> olanı kullan. Görsel PDF yalnızca elden veya e-postayla
+                  gönderirken tercih edilmeli.
+                </p>
               </div>
             </div>
 
