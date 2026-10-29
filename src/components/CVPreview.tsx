@@ -37,6 +37,23 @@ interface CVPreviewProps {
   canUndo?: boolean;
 }
 
+/**
+ * Bağlantıları CV'de kısa ve okunur gösterir.
+ * Uzun adresler (örn. LinkedIn) tek satırda taşıp düzeni bozuyordu.
+ * Hem insan hem ATS için sadeleştirilmiş biçim basılır.
+ */
+const formatSocialUrl = (url: string): string => {
+  if (!url) return '';
+  let s = url.replace(/^https?:\/\//i, '').replace(/^www\./i, '');
+  // Yüzde kodlamasını çöz — "emirhan-y%C4%B1lmaz" yerine "emirhan-yılmaz" görünsün
+  try {
+    s = decodeURIComponent(s);
+  } catch {
+    /* bozuk kodlama — olduğu gibi bırak */
+  }
+  return s.replace(/\/$/, '');
+};
+
 export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPreviewProps) {
   const safeData = sanitizeCVData(cvData);
   const { personalInfo, workExperiences, educations, projects, skills, socialLinks, customSections, sectionOrder, styles } = safeData;
@@ -1343,14 +1360,24 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
           const isDoubleColumn = ['split-sidebar', 'modern-geometric'].includes(styles.template);
           if (isDoubleColumn) {
             const titleLower = sec.title.toLowerCase();
-            const isSkillOrLanguageType = 
-              titleLower.includes('beceri') || 
-              titleLower.includes('yetenek') || 
-              titleLower.includes('yetkinlik') || 
-              titleLower.includes('skill') || 
-              titleLower.includes('dil') || 
-              titleLower.includes('araç') || 
-              titleLower.includes('teknoloji');
+            // Sertifika/ödül gibi bölümler "dil" veya "beceri" kelimesini de
+            // içerebilir; bunları silmek veri kaybı olur. Yalnızca başlığı
+            // tamamen beceri/dil odaklı olan bölümleri filtrele.
+            const isCertificateType =
+              titleLower.includes('sertifika') ||
+              titleLower.includes('certif') ||
+              titleLower.includes('ödül') ||
+              titleLower.includes('award') ||
+              titleLower.includes('kurs');
+            const isSkillOrLanguageType =
+              !isCertificateType &&
+              (titleLower.includes('beceri') ||
+                titleLower.includes('yetenek') ||
+                titleLower.includes('yetkinlik') ||
+                titleLower.includes('skill') ||
+                titleLower.includes('dil') ||
+                titleLower.includes('araç') ||
+                titleLower.includes('teknoloji'));
             if (isSkillOrLanguageType) return false;
           }
           return true;
@@ -1577,7 +1604,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                         {socialLinks.map((link) => (
                           <div key={link.id} className="flex items-center gap-1 text-[10px] text-white/90">
                             <span className="text-white/60 font-semibold text-[9px] uppercase">{link.platform}:</span>
-                            <span className="underline hover:text-white break-all">{link.url}</span>
+                            <span className="underline hover:text-white break-all">{formatSocialUrl(link.url)}</span>
                           </div>
                         ))}
                       </div>
@@ -1786,8 +1813,8 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                       <div className="space-y-0.5 mt-0.5">
                         {socialLinks.map((link) => (
                           <div key={link.id} className="flex items-center gap-1 text-[9.5px]">
-                            <span className="text-amber-400 font-semibold uppercase">{link.platform}:</span>
-                            <span className="underline text-slate-200 break-all">{link.url}</span>
+                            <span className="text-amber-400 font-semibold uppercase shrink-0">{link.platform}:</span>
+                            <span className="underline text-slate-200 whitespace-nowrap text-[9px] leading-tight">{formatSocialUrl(link.url)}</span>
                           </div>
                         ))}
                       </div>

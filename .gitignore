@@ -7,3 +7,7 @@ coverage/
 .env*
 !.env.example
 .vercel
+
+# Kisisel CV verisi (telefon, dogum tarihi vb.) — repoya girmez
+cv-data/
+*.pdf
