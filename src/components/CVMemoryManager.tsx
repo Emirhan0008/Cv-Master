@@ -250,7 +250,7 @@ export const CVMemoryManager: React.FC<CVMemoryManagerProps> = ({
         </div>
 
         {/* 2. TOP ACTION BUTTONS (TOOLBAR) */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
             onClick={() => onSaveCV()}
@@ -258,27 +258,17 @@ export const CVMemoryManager: React.FC<CVMemoryManagerProps> = ({
             title="Mevcut çalışma durumunu aktif slota kaydeder"
           >
             <Save className="w-4 h-4 group-hover:scale-110 transition-transform" />
-            <span>Mevcut CV'yi Kaydet 💾</span>
+            <span>Kaydet</span>
           </button>
 
           <button
             type="button"
             onClick={handleOpenSnapshot}
             className="cursor-pointer py-2.5 px-2.5 bg-[#1C2027] hover:bg-[#252A34] text-teal-300 border border-teal-500/30 hover:border-teal-400 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-sm active:scale-95 group"
-            title="Mevcut CV'den yeni bir kopya/slot oluşturur"
+            title="Mevcut CV'den yeni bir kopya oluşturur"
           >
             <Copy className="w-3.5 h-3.5 text-teal-400 group-hover:scale-110 transition-transform" />
-            <span>Yeni İsimle Kaydet 📸</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onCreateNew}
-            className="cursor-pointer py-2.5 px-2.5 bg-[#1C2027] hover:bg-[#252A34] text-rose-300 border border-rose-500/30 hover:border-rose-400 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-sm active:scale-95 group"
-            title="Temiz boş yeni bir CV açar"
-          >
-            <Plus className="w-3.5 h-3.5 text-rose-400 group-hover:scale-110 transition-transform" />
-            <span>Yeni Boş CV 📑</span>
+            <span>Kopya Kaydet</span>
           </button>
 
           <button
@@ -288,23 +278,8 @@ export const CVMemoryManager: React.FC<CVMemoryManagerProps> = ({
             title="Tüm kayıtlı CV'leri tek bir JSON dosyası olarak indirir"
           >
             <Download className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
-            <span>Belleği Yedekle 📦</span>
+            <span>Yedekle</span>
           </button>
-        </div>
-
-        {/* RECALL GUIDANCE BANNER */}
-        <div className="bg-gradient-to-r from-teal-500/10 via-emerald-500/5 to-transparent border border-teal-500/30 rounded-xl p-3 flex items-center gap-3">
-          <div className="p-2 bg-teal-500/20 text-teal-400 rounded-lg border border-teal-500/30 shrink-0">
-            <FolderOpen className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <h5 className="text-xs font-extrabold text-teal-300 uppercase tracking-wider">
-              Kayıtlı Özgeçmişi Geri Çağırma & Yükleme
-            </h5>
-            <p className="text-[10px] text-gray-300 leading-normal mt-0.5">
-              İstediğiniz özgeçmişin yanındaki <strong className="text-teal-200">"Geri Çağır"</strong> butonuna tıklayarak onu anında düzenleme alanına yükleyip çalışmaya devam edebilirsiniz.
-            </p>
-          </div>
         </div>
 
       {/* 3. SEARCH & FILTER SECTION */}
@@ -351,7 +326,8 @@ export const CVMemoryManager: React.FC<CVMemoryManagerProps> = ({
           </button>
         </div>
 
-        {/* Filter Tabs */}
+        {/* Filter Tabs — yalnızca ayrıştırılacak bir kategori varsa gösterilir */}
+        {sampleCVs.length > 0 && (
         <div className="flex items-center gap-1.5 p-1 bg-[#111317] border border-[#2D3139] rounded-xl text-[11px] font-bold">
           <button
             type="button"
@@ -387,6 +363,7 @@ export const CVMemoryManager: React.FC<CVMemoryManagerProps> = ({
             Hazır Şablonlar ({sampleCVs.length})
           </button>
         </div>
+        )}
       </div>
 
       {/* 4. CV LIST ITEMS */}
