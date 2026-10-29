@@ -8,11 +8,12 @@ import CVPreview from './components/CVPreview';
 import { PRESETS } from './utils/presets';
 import { sanitizeCVData } from './utils/sanitizer';
 import { 
-  FileText, Download, Share2, Printer, Layers, HelpCircle, 
+  FileText, Download, Printer, Layers, HelpCircle, 
   Sparkles, Check, Smartphone, FileJson, 
-  ExternalLink, FileCode, CheckCircle2, Image, Dices,
+  ExternalLink, FileCode, CheckCircle2, Image,
   AlertTriangle, Loader2, X, ChevronRight, ChevronLeft, FileCheck,
-  LayoutGrid, Save, Cloud, Plus, Database, Edit3, HardDrive, FolderOpen
+  LayoutGrid, Save, Cloud, Plus, Database, HardDrive, FolderOpen, MoreHorizontal,
+  FileImage, Wand2, Share
 } from 'lucide-react';
 import { CVMemoryManager } from './components/CVMemoryManager.tsx';
 import { auth } from './lib/firebase';
@@ -138,6 +139,7 @@ export default function App() {
   const [mobileActiveView, setMobileActiveView] = useState<'form' | 'preview'>('form');
   const [alertMsg, setAlertMsg] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
   const [showPdfModal, setShowPdfModal] = useState<boolean>(false);
+  const [showMoreMenu, setShowMoreMenu] = useState<boolean>(false);
   const [showNewCVConfirmModal, setShowNewCVConfirmModal] = useState<boolean>(false);
   const [showMemoryModal, setShowMemoryModal] = useState<boolean>(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
@@ -1463,22 +1465,16 @@ ${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
               </p>
             </div>
 
-            {/* Active CV Chip / Memory Switcher */}
-            <button 
-              type="button"
-              onClick={() => setShowMemoryModal(true)}
-              className="hidden sm:flex items-center gap-2 bg-[#1A1D23] hover:bg-[#20242B] border border-teal-500/40 hover:border-teal-400 rounded-lg px-2.5 py-1 text-left transition group cursor-pointer ml-1"
-              title="Aktif CV Bellek Kaydı (Değiştirmek veya geri çağırmak için tıklayın)"
-            >
-              <HardDrive className="w-3.5 h-3.5 text-teal-400 group-hover:scale-110 transition-transform" />
+            {/* Aktif CV adı — salt gösterim. Değiştirmek için üstteki "CV Geri Çağır" kullanılır. */}
+            <div className="hidden sm:flex items-center gap-2 bg-[#1A1D23] border border-[#2D3139] rounded-lg px-2.5 py-1 ml-1">
+              <HardDrive className="w-3.5 h-3.5 text-teal-400/70 shrink-0" />
               <div className="max-w-[130px] md:max-w-[200px] truncate">
-                <span className="text-[8px] uppercase tracking-wider text-gray-400 block font-mono leading-none">Aktif CV</span>
-                <span className="text-[11px] font-bold text-gray-200 group-hover:text-teal-300 truncate block">
+                <span className="text-[8px] uppercase tracking-wider text-gray-500 block font-mono leading-none">Aktif CV</span>
+                <span className="text-[11px] font-bold text-gray-300 truncate block">
                   {cvData.title || cvData.personalInfo?.name || 'Yeni CV'}
                 </span>
               </div>
-              <Edit3 className="w-3 h-3 text-gray-500 group-hover:text-teal-400 shrink-0 ml-0.5" />
-            </button>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-center md:justify-end gap-2 w-full md:w-auto">
@@ -1577,91 +1573,99 @@ ${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
               </button>
             )}
 
-            <button 
-              onClick={() => handleCreateNew()}
-              className="cursor-pointer h-8 w-8 bg-[#1E222A] text-rose-400 hover:text-rose-300 border border-rose-500/50 hover:border-rose-400 hover:bg-rose-500/20 rounded-lg flex items-center justify-center transition-all duration-200 shadow-[0_0_8px_rgba(244,63,94,0.15)] hover:shadow-[0_0_12px_rgba(244,63,94,0.3)] active:scale-95 group relative"
-              title="Yeni Temiz CV Kur 📑 (Tüm alanları boşaltır)"
-            >
-              <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
-            </button>
-
-            <button 
-              onClick={forceSinglePage}
-              className="cursor-pointer h-8 w-8 bg-[#1E222A] text-amber-400 hover:text-amber-300 border border-amber-500/50 hover:border-amber-400 hover:bg-amber-500/20 rounded-lg flex items-center justify-center transition-all duration-200 shadow-[0_0_8px_rgba(245,158,11,0.15)] hover:shadow-[0_0_12px_rgba(245,158,11,0.3)] active:scale-95 group relative"
-              title="Tek Sayfaya Sığdır 🎯 (Yazı boyutu ve yoğunluğu daraltıp tek sayfaya sıkıştırır)"
-            >
-              <LayoutGrid className="w-4 h-4 group-hover:scale-110 transition-transform" />
-            </button>
-
-            {/* Action Group 1: Helper Utilities */}
-            <div className="flex items-center bg-[#1A1D23] border border-[#2D3139] rounded-lg p-0.5 shrink-0" title="Doldurma ve Paylaşım Araçları">
+            {/* Tek "Daha fazla" menüsü — etiketsiz ikonlar burada, açıklamalarıyla */}
+            <div className="relative shrink-0">
               <button
-                onClick={loadRandomDemo}
-                className="p-1.5 text-gray-400 hover:text-amber-400 hover:bg-white/5 rounded-md transition-all"
-                title="Rastgele Akıllı Veri Doldur"
+                onClick={() => setShowMoreMenu(v => !v)}
+                className={`cursor-pointer h-8 px-2.5 rounded-lg flex items-center gap-1.5 text-[11px] font-bold border transition-all active:scale-95 ${
+                  showMoreMenu
+                    ? 'bg-[#232833] text-white border-teal-500/60'
+                    : 'bg-[#1A1D23] text-gray-300 border-[#2D3139] hover:text-white hover:border-gray-500'
+                }`}
+                title="Diğer çıktı biçimleri ve araçlar"
+                aria-expanded={showMoreMenu}
               >
-                <Dices className="w-3.5 h-3.5" />
+                <MoreHorizontal className="w-4 h-4" />
+                <span className="hidden lg:inline">Daha fazla</span>
               </button>
-              <span className="w-px h-3.5 bg-[#2D3139] mx-1" />
-              <button
-                onClick={triggerDeviceSharing}
-                className="p-1.5 text-gray-400 hover:text-teal-400 hover:bg-white/5 rounded-md transition-all"
-                title="Yerel Cihazlarda Paylaş"
-              >
-                <Share2 className="w-3.5 h-3.5" />
-              </button>
+
+              {showMoreMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
+                  <div className="absolute right-0 top-full mt-2 w-60 bg-[#16191E] border border-[#2D3139] rounded-xl shadow-2xl z-50 overflow-hidden py-1">
+                    <p className="px-3 pt-1.5 pb-1 text-[9px] uppercase tracking-widest text-gray-500 font-bold">Dosya</p>
+                    <button
+                      onClick={() => { setShowMoreMenu(false); handleCreateNew(); }}
+                      className="w-full text-left px-3 py-2 text-[11.5px] text-gray-300 hover:bg-[#20242B] hover:text-white flex items-center gap-2.5"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-rose-400" /> Yeni boş CV
+                    </button>
+                    <button
+                      onClick={() => { setShowMoreMenu(false); triggerDocxLocalExport(); }}
+                      className="w-full text-left px-3 py-2 text-[11.5px] text-gray-300 hover:bg-[#20242B] hover:text-white flex items-center gap-2.5"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-emerald-400" /> Word (DOCX) indir
+                    </button>
+                    <button
+                      onClick={() => { setShowMoreMenu(false); triggerImageExport(); }}
+                      className="w-full text-left px-3 py-2 text-[11.5px] text-gray-300 hover:bg-[#20242B] hover:text-white flex items-center gap-2.5"
+                    >
+                      <FileImage className="w-3.5 h-3.5 text-blue-400" /> PNG indir
+                    </button>
+                    <button
+                      onClick={() => { setShowMoreMenu(false); generateDirectPdf(); }}
+                      className="w-full text-left px-3 py-2 text-[11.5px] text-gray-300 hover:bg-[#20242B] hover:text-white flex items-center gap-2.5"
+                    >
+                      <Image className="w-3.5 h-3.5 text-gray-400" /> Görsel PDF (birebir)
+                    </button>
+                    <button
+                      onClick={() => { setShowMoreMenu(false); triggerPdfPrint(); }}
+                      className="w-full text-left px-3 py-2 text-[11.5px] text-gray-300 hover:bg-[#20242B] hover:text-white flex items-center gap-2.5"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-teal-400" /> Yazdır / PDF seçenekleri
+                    </button>
+
+                    <p className="px-3 pt-2 pb-1 text-[9px] uppercase tracking-widest text-gray-500 font-bold border-t border-[#2D3139] mt-1">Araçlar</p>
+                    <button
+                      onClick={() => { setShowMoreMenu(false); forceSinglePage(); }}
+                      className="w-full text-left px-3 py-2 text-[11.5px] text-gray-300 hover:bg-[#20242B] hover:text-white flex items-center gap-2.5"
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5 text-amber-400" /> Tek sayfaya sığdır
+                    </button>
+                    <button
+                      onClick={() => { setShowMoreMenu(false); loadRandomDemo(); }}
+                      className="w-full text-left px-3 py-2 text-[11.5px] text-gray-300 hover:bg-[#20242B] hover:text-white flex items-center gap-2.5"
+                    >
+                      <Wand2 className="w-3.5 h-3.5 text-gray-400" /> Örnek veriyle doldur
+                    </button>
+                    <button
+                      onClick={() => { setShowMoreMenu(false); triggerDeviceSharing(); }}
+                      className="w-full text-left px-3 py-2 text-[11.5px] text-gray-300 hover:bg-[#20242B] hover:text-white flex items-center gap-2.5"
+                    >
+                      <Share className="w-3.5 h-3.5 text-teal-400" /> Cihazda paylaş
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
 
-            {/* Action Group 2: Document Export Outputs */}
-            <div className="flex items-center bg-[#1A1D23] border border-[#2D3139] rounded-lg p-0.5 shrink-0" title="Veri Çıktısı Alma Motoru">
-              <button
-                onClick={generateAtsPdf}
-                disabled={isGeneratingPdf}
-                className="px-3.5 py-1.5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-extrabold text-[11px] rounded-md flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
-                title="ATS uyumlu PDF: metin seçilebilir ve işe alım sistemleri okuyabilir. Açılan pencerede Hedef → 'PDF olarak kaydet' seçin."
-              >
-                {isGeneratingPdf ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Hazırlanıyor...
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-3.5 h-3.5" /> PDF İndir
-                  </>
-                )}
-              </button>
-              <button
-                onClick={generateDirectPdf}
-                disabled={isGeneratingPdf}
-                className="p-1.5 text-gray-300 hover:text-white hover:bg-white/10 rounded-md transition-all cursor-pointer disabled:opacity-50"
-                title="Görsel PDF (birebir görünüm): şablon ekran görüntüsü gibi basılır. Metin seçilemez, ATS okuyamaz."
-              >
-                <Image className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={triggerPdfPrint}
-                className="p-1.5 text-gray-300 hover:text-white hover:bg-white/10 rounded-md transition-all cursor-pointer"
-                title="Yazdırma & PDF Seçenekleri Sihirbazı"
-              >
-                <Printer className="w-3.5 h-3.5 text-teal-400" />
-              </button>
-              <span className="w-px h-3.5 bg-[#2D3139] mx-1" />
-              <button
-                onClick={triggerImageExport}
-                className="px-2.5 py-1.5 text-gray-300 hover:text-blue-400 font-bold text-[11px] rounded-md flex items-center gap-1 transition-all hover:bg-white/5"
-                title="Görsel Dosyası (PNG) İndir"
-              >
-                <Image className="w-3.5 h-3.5 text-blue-400" /> PNG
-              </button>
-              <span className="w-px h-3.5 bg-[#2D3139] mx-1" />
-              <button
-                onClick={triggerDocxLocalExport}
-                className="px-2.5 py-1.5 text-gray-300 hover:text-emerald-400 font-bold text-[11px] rounded-md flex items-center gap-1 transition-all hover:bg-white/5"
-                title="Microsoft Word Dosyası (DOCX) İndir"
-              >
-                <Download className="w-3.5 h-3.5 text-emerald-400" /> Word
-              </button>
-            </div>
+            {/* Birincil çıktı: ATS PDF */}
+            <button
+              onClick={generateAtsPdf}
+              disabled={isGeneratingPdf}
+              className="cursor-pointer shrink-0 px-3.5 h-8 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white font-extrabold text-[11px] rounded-lg flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+              title="ATS uyumlu PDF: metin seçilebilir ve işe alım sistemleri okuyabilir."
+            >
+              {isGeneratingPdf ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Hazırlanıyor...
+                </>
+              ) : (
+                <>
+                  <Download className="w-3.5 h-3.5" /> PDF İndir
+                </>
+              )}
+            </button>
           </div>
         </div>
       </header>

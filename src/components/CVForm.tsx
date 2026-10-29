@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { 
   CVData, WorkExperience, Education, Project, SkillCategory, 
   CustomSection, CCStyles, SocialLink 
 } from '../types';
 import { 
   User, Briefcase, GraduationCap, Code, Star, Heart, 
-  Settings, ArrowUp, ArrowDown, Plus, Trash2, Sliders, 
+  Settings, ArrowUp, ArrowDown, Plus, Trash2, 
   FileJson, Palette, Sparkles, Copy, Layout, Smartphone, 
-  Globe, ChevronDown, ChevronUp, ChevronRight, LayoutGrid, Upload, X, Image,
+  Globe, ChevronDown, ChevronUp, ChevronRight, Upload, X, Image,
   FolderOpen, Cloud, Database, HardDrive, History, GripVertical,
   Save, Check, Edit3, FileText, CheckCircle2
 } from 'lucide-react';
@@ -141,17 +141,10 @@ export default function CVForm({
   const [activeTab, setActiveTab] = useState<'personal' | 'experience' | 'education' | 'skills' | 'projects' | 'custom' | 'reorder' | 'design' | 'saved' | 'presets'>(
     side === 'right' ? 'presets' : 'personal'
   );
-  const [justSaved, setJustSaved] = useState(false);
-  const handleQuickSave = () => {
-    onSaveCV();
-    setJustSaved(true);
-    setTimeout(() => setJustSaved(false), 2000);
-  };
   const [dragActive, setDragActive] = useState(false);
   const [pastedDataText, setPastedDataText] = useState('');
   const [importFeedback, setImportFeedback] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
   const [showPromptGuide, setShowPromptGuide] = useState(false);
-  const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const [personalExpanded, setPersonalExpanded] = useState<Record<string, boolean>>({
@@ -978,175 +971,30 @@ export default function CVForm({
 
   return (
     <div className="flex flex-col h-full bg-[#16191E] border-r border-[#2D3139]">
-      {/* ⭐ TOP PROMINENT: CV KAYDETME VE GERİ ÇAĞIRMA MERKEZİ */}
-      <div className="bg-gradient-to-b from-[#181C23] to-[#12151B] border-b-2 border-teal-500/30 p-3 select-none space-y-2 shadow-md shrink-0">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 animate-pulse" />
-            <span className="text-[10px] uppercase font-mono text-gray-400 font-bold tracking-wider shrink-0">Aktif CV:</span>
-            <span className="text-xs font-bold text-gray-200 truncate block" title={cvData.title || cvData.personalInfo?.name}>
-              {cvData.title || cvData.personalInfo?.name || 'Yeni Özgeçmiş'}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              if (onOpenMemoryModal) {
-                onOpenMemoryModal();
-              } else {
-                setActiveTab('saved');
-              }
-            }}
-            className="text-[9.5px] font-mono text-teal-300 hover:text-white bg-teal-500/10 hover:bg-teal-500/20 px-2 py-0.5 rounded-full border border-teal-500/30 shrink-0 font-bold cursor-pointer transition flex items-center gap-1"
-            title="Kayıtlı CV listesini aç"
-          >
-            <span>{savedCVs.length} Kayıtlı CV</span>
-            <ChevronRight className="w-3 h-3 text-teal-400" />
-          </button>
-        </div>
-
-        {/* Ana Eylemler: KAYDET ve GERİ ÇAĞIR */}
-        <div className="grid grid-cols-2 gap-2">
-          {/* CV KAYDET */}
-          <button
-            type="button"
-            onClick={handleQuickSave}
-            className={`cursor-pointer py-2 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 border transition-all active:scale-95 shadow-md ${
-              justSaved
-                ? 'bg-emerald-500 text-white border-emerald-300 shadow-[0_0_16px_rgba(16,185,129,0.6)] scale-[1.02]'
-                : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border-emerald-400/50 shadow-[0_0_12px_rgba(16,185,129,0.3)] hover:shadow-[0_0_18px_rgba(16,185,129,0.5)]'
-            }`}
-            title="Mevcut özgeçmişinizi yerel tarayıcı belleğine anında kaydeder"
-          >
-            {justSaved ? (
-              <>
-                <Check className="w-4 h-4 text-white animate-bounce" />
-                <span>Kaydedildi! ✓</span>
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4 text-white" />
-                <span>CV'yi Kaydet 💾</span>
-              </>
-            )}
-          </button>
-
-          {/* CV GERİ ÇAĞIR */}
-          <button
-            type="button"
-            onClick={() => {
-              if (onOpenMemoryModal) {
-                onOpenMemoryModal();
-              } else {
-                setActiveTab('saved');
-              }
-            }}
-            className="cursor-pointer py-2 px-3 bg-[#1A222C] hover:bg-[#222B38] text-teal-300 hover:text-white border-2 border-teal-500/60 hover:border-teal-400 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all active:scale-95 shadow-[0_0_10px_rgba(20,184,166,0.2)] hover:shadow-[0_0_15px_rgba(20,184,166,0.35)] group"
-            title="Önceden kaydettiğiniz tüm özgeçmişleri görüntüleyin ve geri çağırın"
-          >
-            <FolderOpen className="w-4 h-4 text-teal-400 group-hover:scale-110 transition-transform" />
-            <span>CV Geri Çağır 📂</span>
-          </button>
-        </div>
+      {/* Mobilde aktif CV adı (üst çubukta isim gizli olduğu için) */}
+      <div className="sm:hidden bg-[#12151B] border-b border-[#2D3139] px-3 py-2 select-none shrink-0 flex items-center gap-2">
+        <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+        <span className="text-[10px] uppercase font-mono text-gray-500 font-bold tracking-wider shrink-0">Aktif CV</span>
+        <span className="text-xs font-bold text-gray-200 truncate min-w-0 flex-1" title={cvData.title || cvData.personalInfo?.name}>
+          {cvData.title || cvData.personalInfo?.name || 'Yeni Özgeçmiş'}
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            if (onOpenMemoryModal) {
+              onOpenMemoryModal();
+            } else {
+              setActiveTab('saved');
+            }
+          }}
+          className="text-[9.5px] font-mono text-teal-300 hover:text-white bg-teal-500/10 hover:bg-teal-500/20 px-2 py-0.5 rounded-full border border-teal-500/30 shrink-0 font-bold cursor-pointer transition flex items-center gap-1"
+          title="Kayıtlı CV listesini aç"
+        >
+          <span>{savedCVs.length} kayıt</span>
+          <ChevronRight className="w-3 h-3 text-teal-400" />
+        </button>
       </div>
 
-      {/* Settings / Controls Quick Ribbon */}
-      {(side === 'right' || side === 'both') && (
-        <div className="bg-[#1A1D23] border-b border-[#2D3139] shadow-xs select-none">
-          <div 
-            onClick={() => setIsSettingsExpanded(!isSettingsExpanded)}
-            className="p-3.5 flex items-center justify-between cursor-pointer hover:bg-[#20242D] transition"
-          >
-            <div className="flex items-center gap-2">
-              <Sliders className="w-4 h-4 text-teal-400 animate-pulse" />
-              <h3 className="text-xs font-extrabold text-[#E0E2E6] uppercase tracking-wider">Tasarım & Sayfa Ayarları</h3>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <span className="text-[9.5px] text-teal-400 font-extrabold bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20">
-                {cvData.styles.fontSize.toUpperCase()} • {cvData.styles.density === 'compact' ? 'SIKI' : cvData.styles.density === 'comfortable' ? 'ORTA' : 'GENİŞ'}
-              </span>
-              {isSettingsExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-            </div>
-          </div>
-          
-          {isSettingsExpanded && (
-            <div className="p-3.5 bg-[#16191E]/50 border-t border-[#2D3139]/50 grid grid-cols-1 md:grid-cols-2 gap-2.5 animate-fade-in text-xs">
-              {/* A4 Toggle */}
-              <div className="flex items-center justify-between p-2 bg-[#0F1115] border border-[#2D3139] rounded-lg">
-                <span className="font-semibold text-gray-300">Sayfa Sınır Çizgisi</span>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={cvData.styles.pageGuide}
-                    onChange={(e) => updateStyles('pageGuide', e.target.checked)}
-                    className="rounded text-teal-500 border-[#2D3139] w-4 h-4 bg-[#0F1115]"
-                  />
-                </label>
-              </div>
-
-              {/* Density scale controller */}
-              <div className="flex items-center justify-between p-2 bg-[#0F1115] border border-[#2D3139] rounded-lg">
-                <span className="font-semibold text-gray-300">Kenar Boşluğu:</span>
-                <div className="flex items-center gap-0.5 bg-[#16191E] p-0.5 rounded border border-[#2D3139]">
-                  {(['compact', 'comfortable', 'loose'] as const).map((dense) => (
-                    <button
-                      key={dense}
-                      onClick={() => updateStyles('density', dense)}
-                      className={`text-[9px] font-bold px-2 py-0.5 rounded transition ${
-                        cvData.styles.density === dense 
-                          ? 'bg-[#1A1D23] text-teal-400 shadow-xs' 
-                          : 'text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      {dense === 'compact' ? 'Sıkı' : dense === 'comfortable' ? 'Orta' : 'Geniş'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* FontSize scale controller */}
-              <div className="flex items-center justify-between p-2 bg-[#0F1115] border border-[#2D3139] rounded-lg">
-                <span className="font-semibold text-gray-300">Yazı Boyutu:</span>
-                <div className="flex items-center gap-0.5 bg-[#16191E] p-0.5 rounded border border-[#2D3139]">
-                  {(['xs', 'sm', 'md', 'lg'] as const).map((sz) => (
-                    <button
-                      key={sz}
-                      onClick={() => updateStyles('fontSize', sz)}
-                      className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase transition ${
-                        cvData.styles.fontSize === sz 
-                          ? 'bg-[#1A1D23] text-teal-400 shadow-xs' 
-                          : 'text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      {sz}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* LineHeight controller */}
-              <div className="flex items-center justify-between p-2 bg-[#0F1115] border border-[#2D3139] rounded-lg">
-                <span className="font-semibold text-gray-300">Satır Aralığı:</span>
-                <div className="flex items-center gap-0.5 bg-[#16191E] p-0.5 rounded border border-[#2D3139]">
-                  {(['tight', 'normal', 'relaxed'] as const).map((lh) => (
-                    <button
-                      key={lh}
-                      onClick={() => updateStyles('lineHeight', lh)}
-                      className={`text-[9px] font-bold px-2 py-0.5 rounded transition ${
-                        cvData.styles.lineHeight === lh 
-                          ? 'bg-[#1A1D23] text-teal-400 shadow-xs' 
-                          : 'text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      {lh === 'tight' ? 'Sıkı' : lh === 'normal' ? 'Orta' : 'Geniş'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Internal Navigation Tabs - Separated Content & Configuration Sections */}
       <div className="bg-[#101216] p-3.5 border-b border-[#2D3139] flex-shrink-0 select-none space-y-3.5">
@@ -1211,24 +1059,6 @@ export default function CVForm({
                 );
               })}
             </div>
-
-            {/* Sol Kenar için Doğrudan Kayıtlı CV'ler / Geri Çağır Sekmesi */}
-            {side === 'left' && (
-              <div className="mt-2 pt-2 border-t border-[#2D3139]/50 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('saved')}
-                  className={`cursor-pointer w-full py-1.5 px-2.5 rounded-lg text-[10.5px] font-bold transition-all duration-300 flex items-center justify-center gap-2 border-2 ${
-                    activeTab === 'saved'
-                      ? 'bg-teal-500/15 text-teal-300 border-teal-500 shadow-[0_0_12px_rgba(20,184,166,0.2)] font-extrabold'
-                      : 'bg-[#16191E] border-[#2D3139] text-gray-300 hover:border-teal-500/40 hover:text-teal-300 hover:bg-[#1C2027]'
-                  }`}
-                >
-                  <FolderOpen className={`w-3.5 h-3.5 ${activeTab === 'saved' ? 'text-teal-400' : 'text-gray-400'}`} />
-                  <span>Kayıtlı CV'ler & Geri Çağır ({savedCVs.length})</span>
-                </button>
-              </div>
-            )}
           </div>
         )}
 
@@ -1237,32 +1067,38 @@ export default function CVForm({
           <div>
             <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500/80" />
-              Tasarım, Sıralama & Yönetim ayarları
+              Tasarım & Şablon
             </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              {(['reorder', 'design', 'saved'] as const).map((tab) => {
+            <div className="grid grid-cols-4 gap-1.5">
+              {(['presets', 'design', 'reorder', 'saved'] as const).map((tab) => {
                 const isActive = activeTab === tab;
                 const customStyle = tabStyles[tab as keyof typeof tabStyles];
                 return (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
-                    className={`cursor-pointer py-1.5 px-1.5 rounded-lg text-[10px] font-bold transition-all duration-300 flex items-center justify-center gap-1 border-2 ${
+                    className={`cursor-pointer py-1.5 px-1 rounded-lg text-[9.5px] font-bold transition-all duration-300 flex flex-col items-center justify-center gap-0.5 border-2 ${
                       isActive 
                         ? `${customStyle.activeBg} ${customStyle.activeText} ${customStyle.activeBorder} ${customStyle.activeShadow} font-extrabold` 
                         : `bg-[#16191E] border-[#2D3139] text-gray-400 ${customStyle.hoverBorder} ${customStyle.hoverText} hover:bg-[#1C2027]`
                     }`}
                   >
-                    {tab === 'reorder' && (
+                    {tab === 'presets' && (
                       <>
-                        <Layout className={`w-3.5 h-3.5 shrink-0 ${isActive ? customStyle.activeText : 'text-gray-500'}`} />
-                        <span className="truncate">Sıralama</span>
+                        <Sparkles className={`w-3.5 h-3.5 shrink-0 ${isActive ? customStyle.activeText : 'text-gray-500'}`} />
+                        <span className="truncate">Şablon</span>
                       </>
                     )}
                     {tab === 'design' && (
                       <>
                         <Palette className={`w-3.5 h-3.5 shrink-0 ${isActive ? customStyle.activeText : 'text-gray-500'}`} />
-                        <span className="truncate">Renk/Font</span>
+                        <span className="truncate">Tasarım</span>
+                      </>
+                    )}
+                    {tab === 'reorder' && (
+                      <>
+                        <Layout className={`w-3.5 h-3.5 shrink-0 ${isActive ? customStyle.activeText : 'text-gray-500'}`} />
+                        <span className="truncate">Sıralama</span>
                       </>
                     )}
                     {tab === 'saved' && (
@@ -1274,43 +1110,6 @@ export default function CVForm({
                   </button>
                 );
               })}
-            </div>
-          </div>
-        )}
-
-        {/* CV Taslakları - Sadece Sağ Sidebar veya Her İkisi iken gösterilir */}
-        {(side === 'right' || side === 'both') && (
-          <div>
-            <div className="mt-3.5">
-              <button
-                type="button"
-                onClick={() => setActiveTab('presets')}
-                className={`w-full cursor-pointer py-3 px-3.5 rounded-xl text-xs font-black transition-all duration-300 flex items-center justify-between border-2 relative overflow-hidden group shadow-md ${
-                  activeTab === 'presets'
-                    ? 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500 shadow-[0_0_20px_rgba(217,70,239,0.25)] font-extrabold'
-                    : 'bg-[#16191E] border-fuchsia-500/20 hover:border-fuchsia-500/50 text-[#e2e8f0] hover:bg-[#1C2027]'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <Sparkles className={`w-4 h-4 shrink-0 transition-transform ${activeTab === 'presets' ? 'text-fuchsia-400 scale-110 animate-pulse' : 'text-gray-500 group-hover:text-fuchsia-400 group-hover:scale-110'}`} />
-                  <div className="text-left min-w-0">
-                    <span className="block text-xs font-extrabold tracking-widest uppercase text-white">CV TASLAKLARI</span>
-                    <span className="block text-[8.5px] text-gray-400 font-medium tracking-tight mt-0.5 truncate font-bold">8 Farklı Hazır Tasarım Şablonu</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {activeTab === 'presets' ? (
-                    <span className="text-[8px] bg-fuchsia-500/20 text-fuchsia-300 px-1.5 py-0.5 rounded-md border border-fuchsia-400/40 uppercase font-extrabold tracking-wider animate-pulse">AÇIK</span>
-                  ) : (
-                    <span className="text-[8px] bg-[#16191E] text-gray-400 px-1.5 py-0.5 rounded-md border border-[#2D3139] uppercase font-extrabold tracking-wider group-hover:text-fuchsia-400 group-hover:border-fuchsia-500/30 transition-all font-bold">SEÇ</span>
-                  )}
-                  <LayoutGrid className="w-3.5 h-3.5 text-gray-400 group-hover:text-fuchsia-400 transition-colors" />
-                </div>
-                {/* Elegant background light reflections */}
-                {activeTab === 'presets' && (
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-fuchsia-400/15 rounded-full blur-xl pointer-events-none -mr-4 -mt-4 animate-pulse" />
-                )}
-              </button>
             </div>
           </div>
         )}
@@ -2790,6 +2589,79 @@ export default function CVForm({
               <p className="text-xs text-gray-400 leading-relaxed mt-1">
                 Karakter yazı kombinasyonlarını, detay çizgi gölgelerini ve marka renk paletinizi belirleyerek tasarım detaylarını kişiselleştirin.
               </p>
+            </div>
+
+            {/* Sayfa Düzeni — önceden ayrı bir katlanır şeritteydi, buraya taşındı */}
+            <div className="space-y-3">
+              <h4 className="font-bold text-[#E0E2E6] text-sm">Sayfa Düzeni</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-xs">
+                <div className="flex items-center justify-between p-2 bg-[#0F1115] border border-[#2D3139] rounded-lg">
+                  <span className="font-semibold text-gray-300">Sayfa Sınır Çizgisi</span>
+                  <input
+                    type="checkbox"
+                    checked={cvData.styles.pageGuide}
+                    onChange={(e) => updateStyles('pageGuide', e.target.checked)}
+                    className="rounded text-teal-500 border-[#2D3139] w-4 h-4 bg-[#0F1115]"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-2 bg-[#0F1115] border border-[#2D3139] rounded-lg">
+                  <span className="font-semibold text-gray-300">Kenar Boşluğu:</span>
+                  <div className="flex items-center gap-0.5 bg-[#16191E] p-0.5 rounded border border-[#2D3139]">
+                    {(['compact', 'comfortable', 'loose'] as const).map((dense) => (
+                      <button
+                        key={dense}
+                        onClick={() => updateStyles('density', dense)}
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded transition ${
+                          cvData.styles.density === dense
+                            ? 'bg-[#1A1D23] text-teal-400 shadow-xs'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {dense === 'compact' ? 'Sıkı' : dense === 'comfortable' ? 'Orta' : 'Geniş'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-2 bg-[#0F1115] border border-[#2D3139] rounded-lg">
+                  <span className="font-semibold text-gray-300">Yazı Boyutu:</span>
+                  <div className="flex items-center gap-0.5 bg-[#16191E] p-0.5 rounded border border-[#2D3139]">
+                    {(['xs', 'sm', 'md', 'lg'] as const).map((sz) => (
+                      <button
+                        key={sz}
+                        onClick={() => updateStyles('fontSize', sz)}
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase transition ${
+                          cvData.styles.fontSize === sz
+                            ? 'bg-[#1A1D23] text-teal-400 shadow-xs'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {sz}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-2 bg-[#0F1115] border border-[#2D3139] rounded-lg">
+                  <span className="font-semibold text-gray-300">Satır Aralığı:</span>
+                  <div className="flex items-center gap-0.5 bg-[#16191E] p-0.5 rounded border border-[#2D3139]">
+                    {(['tight', 'normal', 'relaxed'] as const).map((lh) => (
+                      <button
+                        key={lh}
+                        onClick={() => updateStyles('lineHeight', lh)}
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded transition ${
+                          cvData.styles.lineHeight === lh
+                            ? 'bg-[#1A1D23] text-teal-400 shadow-xs'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {lh === 'tight' ? 'Sıkı' : lh === 'normal' ? 'Orta' : 'Geniş'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Smart Colors and Custom Typo section */}
