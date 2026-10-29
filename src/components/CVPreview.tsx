@@ -1215,7 +1215,13 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                       </p>
                     </div>
                     <div className="text-[11px] font-mono font-semibold text-slate-500 shrink-0 select-none whitespace-nowrap flex items-center gap-1 leading-5">
-                      <Editable path={['workExperiences', exp.id, 'startDate']} text={exp.startDate} /> - <Editable path={['workExperiences', exp.id, 'endDate']} text={exp.current ? 'Günümüz' : exp.endDate} />
+                      <Editable path={['workExperiences', exp.id, 'startDate']} text={exp.startDate} />
+                      {!exp.current && exp.endDate && (
+                        <>
+                          <span className="text-slate-300">-</span>
+                          <Editable path={['workExperiences', exp.id, 'endDate']} text={exp.endDate} />
+                        </>
+                      )}
                     </div>
                   </div>
                   {/* Description row spanning full width underneath */}
@@ -1259,7 +1265,13 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                       </p>
                     </div>
                     <div className="text-[11px] font-mono font-semibold text-slate-500 shrink-0 select-none whitespace-nowrap flex items-center gap-1 leading-5">
-                      <Editable path={['educations', edu.id, 'startDate']} text={edu.startDate} /> - <Editable path={['educations', edu.id, 'endDate']} text={edu.current ? 'Günümüz' : edu.endDate} />
+                      <Editable path={['educations', edu.id, 'startDate']} text={edu.startDate} />
+                      {!edu.current && edu.endDate && (
+                        <>
+                          <span className="text-slate-300">-</span>
+                          <Editable path={['educations', edu.id, 'endDate']} text={edu.endDate} />
+                        </>
+                      )}
                     </div>
                   </div>
                   {/* Description row spanning full width underneath */}
@@ -1803,7 +1815,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                     <div>
                       <p className="font-bold text-slate-400 text-[9px] uppercase">Websitesi</p>
                       <span className="underline text-amber-400 font-medium">
-                        <Editable path={['personalInfo', 'website']} text={personalInfo.website} />
+                        <Editable path={['personalInfo', 'website']} text={formatSocialUrl(personalInfo.website)} />
                       </span>
                     </div>
                   )}
