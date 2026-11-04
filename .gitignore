@@ -11,3 +11,6 @@ coverage/
 # Kisisel CV verisi (telefon, dogum tarihi vb.) — repoya girmez
 cv-data/
 *.pdf
+
+# CV API yerel deposu (token + CV kopyalari)
+.cv-store/

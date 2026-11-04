@@ -434,7 +434,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
         <div style={{ color: customColor || '#ffffff' }} className="opacity-90 flex items-center justify-center shrink-0">
           {getSectionIcon(title)}
         </div>
-        <h4 className="font-extrabold tracking-widest uppercase text-[10px] leading-none m-0 p-0 flex-1 min-w-0" style={{ color: customColor || '#ffffff', fontFamily: 'Space Grotesk, sans-serif' }}>
+        <h4 className="font-extrabold tracking-[0.08em] uppercase text-[10px] leading-none m-0 p-0 flex-1 min-w-0" style={{ color: customColor || '#ffffff', fontFamily: 'Space Grotesk, sans-serif' }}>
           {title}
         </h4>
       </div>
@@ -1546,9 +1546,8 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   <img
                     src={personalInfo.avatarUrl}
                     alt={personalInfo.name}
-                    className={`rounded-full object-cover border-[5px] border-white/20 hover:border-white/40 shadow-xl transition-all duration-350 hover:scale-105 ${styles.density === 'compact' ? 'w-20 h-20' : 'w-32 h-32'}`}
-                    referrerPolicy="no-referrer"
-                    crossOrigin="anonymous"
+                    className={`rounded-full object-cover border-[5px] border-white/20 shadow-xl ${styles.density === 'compact' ? 'w-20 h-20' : 'w-32 h-32'} print:block print:rounded-full print:object-cover`}
+                    style={{ imageRendering: 'auto' }}
                   />
                 </div>
               ) : (
@@ -1604,7 +1603,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   {personalInfo.website && (
                     <div className="flex flex-col">
                       <span className="text-[9px] uppercase text-white/40 font-bold">Web / Portfolyo</span>
-                      <span className="underline font-medium hover:text-white break-all">
+                      <span className="underline font-medium hover:text-white break-all [overflow-wrap:anywhere] max-w-full">
                         <Editable path={['personalInfo', 'website']} text={personalInfo.website} />
                       </span>
                     </div>
@@ -1612,11 +1611,11 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   {socialLinks && socialLinks.length > 0 && (
                     <div className="flex flex-col pt-1">
                       <span className="text-[9px] uppercase text-white/40 font-bold">Sosyal Medya / Bağlantılar</span>
-                      <div className="space-y-0.5 mt-0.5">
+                      <div className="space-y-1 mt-0.5">
                         {socialLinks.map((link) => (
-                          <div key={link.id} className="flex items-center gap-1 text-[10px] text-white/90">
-                            <span className="text-white/60 font-semibold text-[9px] uppercase">{link.platform}:</span>
-                            <span className="underline hover:text-white break-all">{formatSocialUrl(link.url)}</span>
+                          <div key={link.id} className="flex flex-col">
+                            <span className="text-white/40 font-bold text-[9px] uppercase">{link.platform}</span>
+                            <span className="underline font-medium hover:text-white break-all [overflow-wrap:anywhere] max-w-full">{formatSocialUrl(link.url)}</span>
                           </div>
                         ))}
                       </div>

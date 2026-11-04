@@ -71,6 +71,45 @@ export const CVMemoryManager: React.FC<CVMemoryManagerProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
 
+  // API'den Yükle paneli — CLI/MCP'nin gönderdiği CV'yi çeker
+  const [showApiPanel, setShowApiPanel] = useState(false);
+  const [apiUrl, setApiUrl] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return localStorage.getItem('cv_api_url') || window.location.origin;
+  });
+  const [apiToken, setApiToken] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return localStorage.getItem('cv_api_token') || '';
+  });
+  const [apiBusy, setApiBusy] = useState(false);
+
+  const handleApiFetch = async () => {
+    const base = (apiUrl || window.location.origin).replace(/\/+$/, '');
+    const token = apiToken.trim();
+    if (!token) {
+      triggerAlert?.('error', 'API token gerekli. Sunucudaki CV_API_TOKEN değerini girin.');
+      return;
+    }
+    setApiBusy(true);
+    try {
+      localStorage.setItem('cv_api_url', base);
+      localStorage.setItem('cv_api_token', token);
+      const res = await fetch(`${base}/api/cv/latest`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Sunucu ${res.status}`);
+      if (!body.data) throw new Error('Sunucudan CV verisi gelmedi.');
+      onImportBackup(JSON.stringify(body.data));
+      triggerAlert?.('success', `API'den yüklendi: ${body.title || body.slug}`);
+      setShowApiPanel(false);
+    } catch (e: any) {
+      triggerAlert?.('error', `API hatası: ${e.message || 'bağlantı kurulamadı'}`);
+    } finally {
+      setApiBusy(false);
+    }
+  };
+
   // Save As New (Snapshot) popover state
   const [showSaveAsModal, setShowSaveAsModal] = useState(false);
   const [newSnapshotTitle, setNewSnapshotTitle] = useState('');
@@ -324,7 +363,50 @@ export const CVMemoryManager: React.FC<CVMemoryManagerProps> = ({
             <Upload className="w-3.5 h-3.5 text-teal-400" />
             <span>Yedek Yükle (JSON)</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setShowApiPanel((v) => !v)}
+            className="cursor-pointer py-1.5 px-3 bg-[#16191E] hover:bg-[#1E232B] border border-[#2D3139] hover:border-teal-500/40 text-gray-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition shrink-0"
+            title="CLI/MCP ile gönderilen CV'yi sunucudan çeker"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-teal-400" />
+            <span>API'den Yükle</span>
+          </button>
         </div>
+
+        {showApiPanel && (
+          <div className="p-2.5 bg-[#111317] border border-[#2D3139] rounded-xl space-y-2">
+            <p className="text-[11px] text-gray-400 leading-relaxed">
+              Terminalde <code className="text-teal-300">node mcp/cli.mjs push &lt;slug&gt;</code> çalıştırın.
+              Buradaki sunucu adresi ve token, sunucudaki <code className="text-teal-300">CV_API_TOKEN</code> ile aynı olmalı.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-[1.3fr_1fr_auto] gap-1.5">
+              <input
+                type="text"
+                value={apiUrl}
+                onChange={(e) => setApiUrl(e.target.value)}
+                placeholder="http://localhost:3010"
+                className="bg-[#16191E] border border-[#2D3139] focus:border-teal-500 rounded-lg px-2.5 py-1.5 text-[11px] text-white placeholder-gray-600 outline-none transition"
+              />
+              <input
+                type="password"
+                value={apiToken}
+                onChange={(e) => setApiToken(e.target.value)}
+                placeholder="CV_API_TOKEN"
+                className="bg-[#16191E] border border-[#2D3139] focus:border-teal-500 rounded-lg px-2.5 py-1.5 text-[11px] text-white placeholder-gray-600 outline-none transition"
+              />
+              <button
+                type="button"
+                onClick={handleApiFetch}
+                disabled={apiBusy}
+                className="cursor-pointer px-3 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold transition"
+              >
+                {apiBusy ? 'Getiriliyor…' : 'Getir'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Filter Tabs — yalnızca ayrıştırılacak bir kategori varsa gösterilir */}
         {sampleCVs.length > 0 && (

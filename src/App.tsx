@@ -1003,14 +1003,20 @@ export default function App() {
       // Boş sayfa üretmemek için: sona kalan dilim 3 mm'den küçükse basma
       const minSlicePx = 3 / mmPerPx;
 
+      // Yuvarlama toleransı: sayfa yüksekliğini %1'den az aşan içerik tek sayfa sayılır.
+      // (min-h-[297mm] + alt piksel yuvarlaması yüzünden 1-2 px taşıp boş 2. sayfa üretiyordu)
+      const rawPageCount = canvas.height / pageHeightPx;
+      const singlePage = rawPageCount <= 1.01;
+
       let offsetY = 0;
       let pageIndex = 0;
 
       while (offsetY < canvas.height) {
         const remaining = canvas.height - offsetY;
         if (remaining < minSlicePx) break;
+        if (singlePage && pageIndex > 0) break;
 
-        const sliceH = Math.min(pageHeightPx, remaining);
+        const sliceH = singlePage ? canvas.height : Math.min(pageHeightPx, remaining);
 
         const pageCanvas = document.createElement('canvas');
         pageCanvas.width = canvas.width;
@@ -1039,12 +1045,12 @@ export default function App() {
           0,
           0,
           pageWidth,
-          sliceH * mmPerPx, // son sayfa artığı da tam yüksekliğinde basılır
+          Math.min(pageHeight, sliceH * mmPerPx), // A4'ü aşan alt piksel farkını kırp
           undefined,
           'FAST',
         );
 
-        offsetY += pageHeightPx;
+        offsetY += singlePage ? canvas.height : pageHeightPx;
         pageIndex++;
       }
 
