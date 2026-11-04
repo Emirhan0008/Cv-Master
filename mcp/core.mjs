@@ -527,12 +527,14 @@ export function exportDraft(args) {
 /* Uzak API — CLI/MCP, siteye CV gönderir ve siteden CV çeker          */
 /* ------------------------------------------------------------------ */
 
+const PROD_API_URL = 'https://cv-master-pi.vercel.app';
+
 export function remoteConfig(overrides = {}) {
   const base =
     overrides.apiUrl ||
     process.env.CV_API_URL ||
     process.env.CV_MASTER_API_URL ||
-    'http://localhost:3010';
+    PROD_API_URL;
 
   let token = overrides.apiToken || process.env.CV_API_TOKEN || '';
 

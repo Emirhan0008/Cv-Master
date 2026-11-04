@@ -155,7 +155,7 @@ async function main() {
         ],
         note: 'Her komut JSON döndürür. En hızlı yol: model tek JSON üretir → apply --file.',
         remote: {
-          env: ['CV_API_URL (varsayılan http://localhost:3010)', 'CV_API_TOKEN (zorunlu)'],
+          env: ['CV_API_URL (varsayılan https://cv-master-pi.vercel.app)', 'CV_API_TOKEN (zorunlu)'],
           siteButton: 'Sitede "CV Geri Çağır" → "API\'den Yükle"',
         },
       });
