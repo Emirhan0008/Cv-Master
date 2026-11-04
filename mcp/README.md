@@ -40,6 +40,38 @@ Get-Content payload.json -Raw | npm run cv -- apply rehber-2026
 3. `npm run cv -- apply <slug> --file payload.json` → yaz + otomatik doğrula
 4. `npm run cv -- export <slug> --downloads` → uygulamaya yükle
 
+## Şablon galerisi (önce bak, sonra seç)
+
+Tek komut, 11 tasarımın hepsini render eder:
+
+```powershell
+npm run cv -- preview rehber-2026                # tüm şablonlar
+npm run cv -- preview rehber-2026 --templates corporate,modern,tech-mono
+npm run cv -- preview rehber-2026 --out C:\temp\galeri --no-sheet
+```
+
+Çıktı: `~/Downloads/cv-preview-<slug>/`
+
+| Dosya | İçerik |
+|---|---|
+| `gallery.html` | Tıklanabilir galeri (tarayıcıda aç) |
+| `gallery.png` | Tek PNG özet sayfası — hepsi bir arada |
+| `gallery.json` | `index → şablon` eşlemesi + ölçümler |
+| `01-corporate.png` … | Her şablonun A4 önizlemesi |
+
+Her kartta şablon adı, kategori, düzen tipi, taşma (mm), doluluk (%) ve
+kopyalanabilir CLI komutu yer alır.
+
+Beğendiğini numarayla (veya id ile) seç ve PDF'i üret:
+
+```powershell
+npm run cv -- pick rehber-2026 --template 6 --pdf          # numara galerideki sıra
+npm run cv -- pick rehber-2026 --template minimalist-clean --pdf
+npm run cv -- pick rehber-2026 --template 3 --pdf --out C:\CV\final.pdf
+```
+
+`pick` şablonu taslağa yazar ve istenirse PDF'i doğrudan `Downloads`'a üretir.
+
 ## MCP
 
 `opencode.jsonc` içine:

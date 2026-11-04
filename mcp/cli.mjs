@@ -148,6 +148,8 @@ async function main() {
           'node mcp/cli.mjs read <slug> [--out dosya.json]',
           'node mcp/cli.mjs list',
           'node mcp/cli.mjs export <slug> [--downloads]',
+          'node mcp/cli.mjs preview <slug> [--out <dizin>] [--templates a,b] [--no-sheet]  # tüm şablon önizlemeleri',
+          'node mcp/cli.mjs pick <slug> --template <numara|id> [--pdf] [--out <dosya>] [--downloads]  # galeriden seç',
           'node mcp/cli.mjs pdf <slug> [--out <dosya>] [--api <url>] [--token <t>]',
           'node mcp/cli.mjs push <slug> [--api <url>] [--token <t>]   # siteye gönder',
           'node mcp/cli.mjs pull [slug] [--as <yerel-slug>]           # siteden çek',
@@ -273,6 +275,99 @@ async function main() {
       });
 
       if (res.status !== 0) process.exitCode = res.status || 1;
+      return;
+    }
+
+    case 'preview':
+    case 'gallery': {
+      const slug = positional[0] || flags.slug;
+      if (!slug) fail('slug gerekli: preview <slug> [--out <dizin>] [--templates a,b] [--no-sheet]');
+
+      const scriptPath = path.join(PROJECT_DIR, 'mcp', 'gallery.mjs');
+      if (!fs.existsSync(scriptPath)) fail(`Galeri üretici bulunamadı: ${scriptPath}`);
+
+      const args = [scriptPath, slug];
+      if (flags.out) args.push('--out', String(flags.out));
+      if (flags.templates) args.push('--templates', String(flags.templates));
+      if (flags['no-sheet']) args.push('--no-sheet');
+
+      const res = spawnSync(process.execPath, args, { stdio: 'inherit', cwd: PROJECT_DIR });
+      if (res.status !== 0) process.exitCode = res.status || 1;
+      return;
+    }
+
+    case 'pick':
+    case 'choose': {
+      const slug = positional[0] || flags.slug;
+      if (!slug) fail('slug gerekli: pick <slug> --template <numara|id> [--pdf]');
+      const wanted = flags.template || flags.t;
+      if (!wanted) fail('--template gerekli (numara veya id). Önce: preview <slug>');
+
+      const { TEMPLATES } = await import('./core.mjs');
+      let templateId = String(wanted).trim();
+
+      // Sayı verildiyse galeri manifestinden çöz (yoksa sabit sıradan)
+      if (/^\d+$/.test(templateId)) {
+        const n = Number(templateId);
+        const manifestPath = flags.gallery
+          ? path.resolve(String(flags.gallery))
+          : path.join(
+              process.env.USERPROFILE || process.env.HOME || PROJECT_DIR,
+              'Downloads',
+              `cv-preview-${slug}`,
+              'gallery.json',
+            );
+
+        let resolved = null;
+        if (fs.existsSync(manifestPath)) {
+          try {
+            const m = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+            resolved = (m.results || []).find((r) => r.index === n)?.id || null;
+          } catch {
+            /* yoksay */
+          }
+        }
+        if (!resolved) resolved = TEMPLATES[n - 1]?.id || null;
+        if (!resolved) fail(`Geçersiz numara: ${n} (1-${TEMPLATES.length})`);
+        templateId = resolved;
+      }
+
+      if (!TEMPLATES.some((t) => t.id === templateId)) {
+        fail(
+          `Bilinmeyen şablon: ${templateId}. Seçenekler: ${TEMPLATES.map((t) => t.id).join(', ')}`,
+        );
+      }
+
+      const styled = runCommand('style', { slug, template: templateId });
+
+      let pdfPath = null;
+      if (flags.pdf || flags.downloads) {
+        pdfPath = flags.out
+          ? path.resolve(String(flags.out).replace(/^~/, process.env.USERPROFILE || process.env.HOME || ''))
+          : path.join(
+              process.env.USERPROFILE || process.env.HOME || PROJECT_DIR,
+              'Downloads',
+              `${slug}.pdf`,
+            );
+
+        const scriptPath = path.join(PROJECT_DIR, 'mcp', 'pdf-final.cjs');
+        const res = spawnSync(process.execPath, [scriptPath, slug, pdfPath], {
+          stdio: 'inherit',
+          cwd: PROJECT_DIR,
+        });
+        if (res.status !== 0) process.exitCode = res.status || 1;
+      }
+
+      out({
+        ok: true,
+        slug,
+        template: templateId,
+        styles: styled.styles,
+        pdf: pdfPath,
+        next: pdfPath
+          ? null
+          : `PDF için: node mcp/cli.mjs pick ${slug} --template ${templateId} --pdf`,
+      });
       return;
     }
 
