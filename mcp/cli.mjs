@@ -150,6 +150,7 @@ async function main() {
           'node mcp/cli.mjs export <slug> [--downloads]',
           'node mcp/cli.mjs preview <slug> [--out <dizin>] [--templates a,b] [--no-sheet]  # tüm şablon önizlemeleri',
           'node mcp/cli.mjs pick <slug> --template <numara|id> [--pdf] [--out <dosya>] [--downloads]  # galeriden seç',
+          'node mcp/cli.mjs debug <slug> [--api <url>]                # hata analizi: ortam/şema/render/PDF/API',
           'node mcp/cli.mjs pdf <slug> [--out <dosya>] [--api <url>] [--token <t>]',
           'node mcp/cli.mjs push <slug> [--api <url>] [--token <t>]   # siteye gönder',
           'node mcp/cli.mjs pull [slug] [--as <yerel-slug>]           # siteden çek',
@@ -231,6 +232,22 @@ async function main() {
       const r = runCommand('validate', { slug });
       out(r);
       if (!r.ok) process.exitCode = 2;
+      return;
+    }
+
+    case 'debug': {
+      const slug = positional[0] || flags.slug;
+      if (!slug) fail('slug gerekli: debug <slug> [--api <url>]');
+
+      const scriptPath = path.join(PROJECT_DIR, 'mcp', 'debug.mjs');
+      if (!fs.existsSync(scriptPath)) fail(`Debug aracı bulunamadı: ${scriptPath}`);
+
+      const args = [scriptPath, slug];
+      if (flags.api) args.push('--api', String(flags.api));
+      if (flags.token) args.push('--token', String(flags.token));
+
+      const res = spawnSync(process.execPath, args, { stdio: 'inherit', cwd: PROJECT_DIR });
+      if (res.status !== 0) process.exitCode = res.status || 1;
       return;
     }
 

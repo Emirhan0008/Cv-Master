@@ -72,6 +72,31 @@ npm run cv -- pick rehber-2026 --template 3 --pdf --out C:\CV\final.pdf
 
 `pick` şablonu taslağa yazar ve istenirse PDF'i doğrudan `Downloads`'a üretir.
 
+## Hata analizi / debug
+
+Tek komut, altı katmanı sırayla kontrol eder:
+
+```powershell
+npm run cv -- debug rehber-2026
+npm run cv -- debug rehber-2026 --api http://localhost:3010
+npm run cv:debug -- rehber-2026
+```
+
+| Katman | Neyi kontrol eder |
+|---|---|
+| 1. Ortam | Node ≥18, taslak dosyası, Playwright, PDF üretici, dev sunucu (`:3010`) |
+| 2. Şema | `validate` → hatalar, uyarılar, kısaltma önerileri |
+| 3. İçerik | Bütçe aşımı, bilinmeyen şablon, boş yetkinlik grubu, tarih biçimi, fotoğraf |
+| 4. Render | Gerçek DOM ölçümü — sayfa sınırını aşan öğe (etiket + px + mm) |
+| 5. Çıktı | Var olan PDF (boyut, sayfa sayısı), export dosyası |
+| 6. Uzak API | Erişim, token, depo adaptörü (blob/upstash/dosya/bellek) |
+
+Çıkış kodu: **2** bloklayan hata · **1** sadece uyarı · **0** temiz.
+Rapor JSON olarak `%TEMP%\opencode\debug-<slug>.json` dosyasına da yazılır.
+
+Render katmanı, `no-print` dekoratif öğeleri ayıklar; bu yüzden `depth3d` gibi
+şablonlarda blur/glow katmanı "taşma" diye yanlış alarm vermez.
+
 ## MCP
 
 `opencode.jsonc` içine:
