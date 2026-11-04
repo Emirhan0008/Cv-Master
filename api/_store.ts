@@ -20,6 +20,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { del as blobDel, get as blobGet, put as blobPut } from '@vercel/blob';
 
 export interface StoredCV {
   slug: string;
@@ -50,13 +51,15 @@ export function assertSlug(slug: unknown): string {
 /* Adaptör seçimi                                                      */
 /* ------------------------------------------------------------------ */
 
-type Adapter = 'upstash' | 'file' | 'memory';
+type Adapter = 'upstash' | 'blob' | 'file' | 'memory';
 
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || '';
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || '';
+const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN || '';
 
 const adapter = ((): Adapter => {
   if (UPSTASH_URL && UPSTASH_TOKEN) return 'upstash';
+  if (BLOB_TOKEN) return 'blob';
   // Vercel/Lambda gibi salt-okunur dosya sistemlerinde dosya adaptörü çalışmaz.
   if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) return 'memory';
   return 'file';
@@ -67,10 +70,12 @@ export const storeInfo = {
   persistent: adapter !== 'memory',
   hint:
     adapter === 'memory'
-      ? 'Kalıcı depo yok. Vercel için UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN ekleyin.'
-      : adapter === 'file'
-        ? `Yerel dosya deposu: ${storeDir()}`
-        : 'Upstash Redis deposu.',
+      ? 'Kalıcı depo yok. Vercel için Blob store bağlayın (BLOB_READ_WRITE_TOKEN) veya UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN ekleyin.'
+      : adapter === 'blob'
+        ? 'Vercel Blob deposu (private).'
+        : adapter === 'file'
+          ? `Yerel dosya deposu: ${storeDir()}`
+          : 'Upstash Redis deposu.',
 };
 
 function storeDir(): string {
@@ -108,11 +113,48 @@ async function upstash(command: (string | number)[]): Promise<any> {
 const mem = new Map<string, string>();
 
 /* ------------------------------------------------------------------ */
+/* Vercel Blob adaptörü (private store)                                */
+/* ------------------------------------------------------------------ */
+
+function blobPath(key: string): string {
+  return `cv-store/${key.replace(/:/g, '__')}.json`;
+}
+
+async function blobRead(key: string): Promise<string | null> {
+  try {
+    const res = await blobGet(blobPath(key), { access: 'private', useCache: false, token: BLOB_TOKEN });
+    if (!res || !res.stream) return null;
+    return await new Response(res.stream).text();
+  } catch {
+    return null;
+  }
+}
+
+async function blobWrite(key: string, value: string): Promise<void> {
+  await blobPut(blobPath(key), value, {
+    access: 'private',
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: 'application/json',
+    token: BLOB_TOKEN,
+  });
+}
+
+async function blobRemove(key: string): Promise<void> {
+  try {
+    await blobDel(blobPath(key), { token: BLOB_TOKEN });
+  } catch {
+    /* zaten yoksa yoksay */
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Ortak okuma/yazma                                                   */
 /* ------------------------------------------------------------------ */
 
 async function rawGet(key: string): Promise<string | null> {
   if (adapter === 'upstash') return (await upstash(['GET', key])) ?? null;
+  if (adapter === 'blob') return blobRead(key);
   if (adapter === 'memory') return mem.get(key) ?? null;
   const p = path.join(storeDir(), `${key.replace(/:/g, '__')}.json`);
   return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null;
@@ -121,6 +163,10 @@ async function rawGet(key: string): Promise<string | null> {
 async function rawSet(key: string, value: string): Promise<void> {
   if (adapter === 'upstash') {
     await upstash(['SET', key, value]);
+    return;
+  }
+  if (adapter === 'blob') {
+    await blobWrite(key, value);
     return;
   }
   if (adapter === 'memory') {
@@ -135,6 +181,10 @@ async function rawSet(key: string, value: string): Promise<void> {
 async function rawDel(key: string): Promise<void> {
   if (adapter === 'upstash') {
     await upstash(['DEL', key]);
+    return;
+  }
+  if (adapter === 'blob') {
+    await blobRemove(key);
     return;
   }
   if (adapter === 'memory') {
@@ -290,8 +340,12 @@ export function checkAuth(req: any): AuthCheck {
     };
   }
 
-  // req.get() case-insensitive header alır (Express standard)
-  const header = req.get('Authorization') || '';
+  // Express'te req.get() varken Vercel Node handler'da yok — iki biçimi de destekle
+  const header =
+    (typeof req.get === 'function' ? req.get('Authorization') : '') ||
+    req.headers?.authorization ||
+    req.headers?.Authorization ||
+    '';
   const fromHeader = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
   const fromQuery = String(req.query?.token || '').trim();
   const provided = fromHeader || fromQuery;
