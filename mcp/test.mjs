@@ -109,6 +109,30 @@ check('şablon değişince palet varsayılana döner', () => {
   eq(r.styles.primaryColor, '#A22A38');
 });
 
+check('şablonla birlikte verilen açık renk ezilmez', () => {
+  // Regresyon: applyPatch şablon varsayılanlarını sonradan yazıp kullanıcının
+  // aynı payload'da verdiği rengi sessizce siliyordu.
+  const r = runCommand('style', {
+    slug: 'test-cv',
+    template: 'modern-geometric',
+    primaryColor: '#0b1f3a',
+    secondaryColor: '#1d4ed8',
+    accentColor: '#0ea5e9',
+    font: 'inter',
+  });
+  eq(r.styles.template, 'modern-geometric');
+  eq(r.styles.primaryColor, '#0b1f3a', 'primaryColor korunmalı');
+  eq(r.styles.secondaryColor, '#1d4ed8', 'secondaryColor korunmalı');
+  eq(r.styles.accentColor, '#0ea5e9', 'accentColor korunmalı');
+  eq(r.styles.font, 'inter', 'font korunmalı');
+});
+
+check('şablonla verilmeyen renk varsayılandan gelir', () => {
+  const r = runCommand('style', { slug: 'test-cv', template: 'corporate', primaryColor: '#123456' });
+  eq(r.styles.primaryColor, '#123456', 'açık renk');
+  eq(r.styles.accentColor, '#0284c7', 'şablon varsayılanı');
+});
+
 check('bilinmeyen şablon hataya düşmez, korunur', () => {
   const r = runCommand('style', { slug: 'test-cv', template: 'yok-boyle' });
   ok(r.notes.some((n) => n.includes('Bilinmeyen şablon')));

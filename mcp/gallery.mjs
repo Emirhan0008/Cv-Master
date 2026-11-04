@@ -18,13 +18,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { TEMPLATES } from './core.mjs';
+import {
+  PREVIEW_URL,
+  START_HINT,
+  checkServer,
+  fits,
+  mountDraft,
+  measureA4,
+} from './measure.mjs';
 
 const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DOWNLOADS = path.join(process.env.USERPROFILE || process.env.HOME || PROJECT_DIR, 'Downloads');
-const BASE_URL = process.env.CV_PREVIEW_URL || 'http://localhost:3010';
-
-/** A4 yüksekliği CSS px (96 dpi): 297 mm — PDF kırpma sınırı */
-const A4_HEIGHT_PX = (297 / 25.4) * 96;
+const BASE_URL = PREVIEW_URL;
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
@@ -65,65 +70,52 @@ const cvTitle = draft.title || draft.personalInfo?.name || slug;
 
 fs.mkdirSync(outDir, { recursive: true });
 
+// Eski çalıştırmadan kalan NN-*.png dosyaları temizle: farklı şablon setiyle
+// üretilmiş eskizler kalırsa 01-corporate.png ile 01-modern-geometric.png yan
+// yana durur ve numara→şablon eşlemesi yanıltır.
+for (const f of fs.readdirSync(outDir)) {
+  if (/^\d{2}-.+\.png$/i.test(f) || f === 'gallery.png' || f === 'gallery.json' || f === 'gallery.html') {
+    try {
+      fs.rmSync(path.join(outDir, f), { force: true });
+    } catch {
+      /* yoksay */
+    }
+  }
+}
+
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 async function main() {
+  const up = await checkServer(BASE_URL);
+  if (!up.ok) {
+    console.error(`HATA: önizleme sunucusu kapalı — ${BASE_URL}`);
+    console.error(`      ${up.error || `HTTP ${up.status}`}`);
+    console.error(`      Başlat: ${START_HINT}`);
+    process.exit(1);
+  }
+
   const browser = await chromium.launch({ headless: true });
   const ctx = await browser.newContext({ viewport: { width: 1000, height: 1400 }, deviceScaleFactor: 2 });
   const page = await ctx.newPage();
-
-  // Bir kez yükle; her şablonda sadece localStorage + reload
-  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(400);
 
   const results = [];
 
   for (let i = 0; i < templates.length; i++) {
     const tpl = templates[i];
-    const rec = JSON.parse(JSON.stringify(draft));
-    rec.id = slug;
-    rec.updatedAt = new Date().toISOString();
-    rec.styles = { ...(rec.styles || {}), template: tpl.id };
 
-    await page.evaluate((data) => {
-      localStorage.setItem('cv_builder_saved_cvs', JSON.stringify([data]));
-      localStorage.setItem('cv_builder_active_id', data.id);
-    }, rec);
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#cv-preview-page', { state: 'visible', timeout: 15000 });
-    await page.waitForTimeout(700);
+    await mountDraft(page, draft, slug, { template: tpl.id });
 
+    // Ekran görüntüsü ekran medyasında (baskı gölgeleri olmadan güzel görünür),
+    // ölçüm PRINT medyasında yapılır — PDF ile birebir aynı geometri.
+    // emulateMedia sayfa düzeyinde kalıcıdır; her turda geri alınmalı.
+    await page.emulateMedia({ media: 'screen' });
+    await page.waitForTimeout(150);
     const png = path.join(outDir, `${String(i + 1).padStart(2, '0')}-${tpl.id}.png`);
-    const el = page.locator('#cv-preview-page').first();
-    await el.screenshot({ path: png });
+    await page.locator('#cv-preview-page').first().screenshot({ path: png });
 
-    const metrics = await page.evaluate((A4) => {
-      const root = document.querySelector('#cv-preview-page');
-      const box = root.getBoundingClientRect();
-      let bottom = 0;
-      let clipped = 0;
-      let textChars = 0;
-      for (const node of root.querySelectorAll('*')) {
-        const txt = (node.textContent || '').trim();
-        if (txt && node.children.length === 0) {
-          textChars += txt.length;
-          const r = node.getBoundingClientRect();
-          const rel = r.bottom - box.top;
-          if (r.height > 0 && rel > bottom) bottom = rel;
-          if (r.height > 0 && rel > A4 + 1) clipped++;
-        }
-      }
-      return {
-        overflowPx: Math.round(bottom - A4),
-        overflowMm: +(((bottom - A4) / 96) * 25.4).toFixed(1),
-        clippedLeaves: clipped,
-        textChars,
-        pageHeightPx: Math.round(box.height),
-      };
-    }, A4_HEIGHT_PX);
-
+    const metrics = await measureA4(page);
+    const singlePage = fits(metrics);
     const fill = +(metrics.textChars / tpl.pageBudget).toFixed(2);
-    const singlePage = metrics.overflowPx <= 1 && metrics.clippedLeaves === 0;
 
     results.push({
       index: i + 1,
@@ -136,6 +128,7 @@ async function main() {
       chars: metrics.textChars,
       fillPct: Math.round(fill * 100),
       overflowMm: metrics.overflowMm,
+      overflowPx: metrics.overflowPx,
       clipped: metrics.clippedLeaves,
       singlePage,
       png: path.basename(png),

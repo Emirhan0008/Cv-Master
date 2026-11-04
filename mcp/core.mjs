@@ -231,10 +231,19 @@ export function applyPatch(cv, patch = {}) {
         notes.push(`Bilinmeyen şablon "${patch.styles.template}" yok sayıldı.`);
         s.template = next.styles.template;
       } else {
-        Object.assign(s, tpl.styles, { template: tpl.id });
-        if (patch.styles.fontSize) s.fontSize = patch.styles.fontSize;
-        if (patch.styles.density) s.density = patch.styles.density;
-        notes.push(`Şablon "${tpl.id}" → palet varsayılana çekildi.`);
+        // ÖNEMLİ: şablon varsayılanları yalnızca AÇIKÇA VERİLMEYEN alanları doldurur.
+        // Aksi halde aynı payload'da verilen primaryColor/secondaryColor sessizce
+        // eziliyor ve "rengim değişmiyor" hatası doğuyordu.
+        const explicit = Object.keys(patch.styles).filter(
+          (k) => k !== 'template' && patch.styles[k] !== undefined && patch.styles[k] !== null,
+        );
+        const themed = { ...tpl.styles, template: tpl.id };
+        for (const k of explicit) themed[k] = patch.styles[k];
+        Object.assign(s, themed);
+        notes.push(
+          `Şablon "${tpl.id}" → palet varsayılana çekildi` +
+            (explicit.length ? ` (korunan alanlar: ${explicit.join(', ')})` : '') + '.',
+        );
       }
     }
     next.styles = s;
@@ -335,6 +344,13 @@ export function validateCV(cv) {
     if (cv.projects.length > 3) suggestions.push(`Alternatif: ${cv.projects.length} projeden en az değerli 1'ini çıkarın.`);
   }
   if (ratio < 0.55) suggestions.push(`Sayfa %${Math.round(ratio * 100)} dolu — daha uzun açıklama eklenebilir.`);
+  // Karakter bütçesi sadece ön kontroldür. Ölçülen gerçek sığma şablona,
+  // fonta ve satır kırılmalarına bağlı olarak ±%15 sapabilir.
+  if (ratio > 0.9) {
+    suggestions.push(
+      `Bütçe sınıra yakın (%${Math.round(ratio * 100)}) — gerçek A4 ölçümü için: node mcp/cli.mjs fit <slug>`,
+    );
+  }
   if (cv.workExperiences.length > LIMITS.maxExperience) suggestions.push(`${cv.workExperiences.length} deneyim var; tek sayfa için ${LIMITS.maxExperience} önerilir.`);
   if (cv.projects.length > LIMITS.maxProjects) suggestions.push(`${cv.projects.length} proje var; tek sayfa için ${LIMITS.maxProjects} önerilir.`);
 
@@ -400,12 +416,13 @@ export function schema() {
     },
     templates: TEMPLATES.map((t) => ({ id: t.id, name: t.name, tag: t.tag, bestFor: t.bestFor, layout: t.layout, pageBudget: t.pageBudget })),
     limits: LIMITS,
-    onePageRule: 'A4 tek sayfa. Varsayılan ~3050 görünür karakter (compact + sm). cv_validate kesin sayıyı verir.',
+    onePageRule: 'A4 tek sayfa. Varsayılan ~3050 görünür karakter (compact + sm). Karakter bütçesi yalnızca ÖN KONTROLDÜR; kesin sonuç için "node mcp/cli.mjs fit <slug>" (gerçek px ölçümü) çalıştırın.',
     writingRules: [
       'Geçmiş zaman kipi; her deneyim 2-3 cümle (ne yaptın + kime + sonuç).',
       'Projede teknoloji listesi technologies alanına; açıklama "ne işe yarıyor" dilinde.',
       'Devam eden kayıtta date boş; "Günümüz" yazılmaz.',
       'Uydurma sayı/kurum/tarih yok; bilinmeyen alan boş kalır.',
+      'Sığma garantisi: apply sonrası fit ile ölç; taşma varsa çıktıdaki "~N karakter kısaltın" hedefini uygula.',
     ],
   };
 }

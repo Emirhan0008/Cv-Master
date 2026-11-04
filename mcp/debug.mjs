@@ -19,13 +19,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { runCommand, templateById, validateCV } from './core.mjs';
+import { A4_HEIGHT_PX, PREVIEW_URL, START_HINT, checkServer, mountDraft, measureA4 } from './measure.mjs';
 
 const require = createRequire(import.meta.url);
 const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DOWNLOADS = path.join(process.env.USERPROFILE || process.env.HOME || PROJECT_DIR, 'Downloads');
-
-/** A4 yüksekliği CSS px (96 dpi): 297 mm — PDF kırpma sınırı */
-const A4_HEIGHT_PX = (297 / 25.4) * 96;
 
 const argv = process.argv.slice(2);
 const flag = (name) => {
@@ -67,12 +65,8 @@ function countPdfPages(file) {
 }
 
 async function serverUp(url) {
-  try {
-    const res = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(4000) });
-    return res.ok || res.status === 404;
-  } catch {
-    return false;
-  }
+  const r = await checkServer(url);
+  return r.ok;
 }
 
 async function main() {
@@ -99,14 +93,12 @@ async function main() {
   const pdfScript = path.join(PROJECT_DIR, 'mcp', 'pdf-final.cjs');
   check('PDF üretici', fs.existsSync(pdfScript) ? 'ok' : 'fail', fs.existsSync(pdfScript) ? 'mcp/pdf-final.cjs' : 'eksik');
 
-  const previewUrl = process.env.CV_PREVIEW_URL || 'http://localhost:3010';
+  const previewUrl = process.env.CV_PREVIEW_URL || PREVIEW_URL;
   const up = await serverUp(previewUrl);
   check(
     'Dev sunucu',
     up ? 'ok' : 'fail',
-    up
-      ? previewUrl
-      : `${previewUrl} kapalı → "PORT=3010 npx tsx server.ts" (PDF ve önizleme bunsuz çalışmaz)`,
+    up ? previewUrl : `${previewUrl} kapalı → ${START_HINT} (PDF ve önizleme bunsuz çalışmaz)`,
   );
 
   /* 2. Şema / validasyon ------------------------------------------- */
@@ -184,55 +176,9 @@ async function main() {
       const browser = await chromium.launch({ headless: true });
       const ctx = await browser.newContext({ viewport: { width: 1000, height: 1400 } });
       const page = await ctx.newPage();
-      await page.goto(previewUrl, { waitUntil: 'domcontentloaded' });
-      await page.evaluate((data) => {
-        localStorage.setItem('cv_builder_saved_cvs', JSON.stringify([data]));
-        localStorage.setItem('cv_builder_active_id', data.id);
-      }, { ...raw, id: slug, updatedAt: new Date().toISOString() });
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.waitForSelector('#cv-preview-page', { state: 'visible', timeout: 15000 });
-      await page.waitForTimeout(900);
 
-      const m = await page.evaluate((A4) => {
-        const root = document.querySelector('#cv-preview-page');
-        const box = root.getBoundingClientRect();
-        const offenders = [];
-        let bottom = 0;
-        let textChars = 0;
-        for (const el of root.querySelectorAll('*')) {
-          const cs = getComputedStyle(el);
-          if (cs.display === 'none' || cs.visibility === 'hidden') continue;
-          const txt = (el.textContent || '').trim();
-          const leaf = el.children.length === 0;
-          if (leaf && txt) {
-            textChars += txt.length;
-            const r = el.getBoundingClientRect();
-            if (r.height > 0 && r.bottom - box.top > bottom) bottom = r.bottom - box.top;
-          }
-          const r = el.getBoundingClientRect();
-          if (r.width < 1 || r.height < 1) continue;
-          const relBottom = r.bottom - box.top;
-          const relRight = r.right - box.left;
-          if (relBottom > A4 + 1 || relRight > box.width + 1) {
-            offenders.push({
-              tag: el.tagName.toLowerCase(),
-              text: (el.textContent || '').trim().slice(0, 60),
-              overBottom: Math.round(relBottom - A4),
-              overRight: Math.round(relRight - box.width),
-              printable: !!(el.offsetParent || cs.position === 'fixed'),
-              decorative: cs.position === 'absolute' && !(el.textContent || '').trim(),
-            });
-          }
-        }
-        return {
-          contentHeight: Math.round(bottom),
-          overflowPx: Math.round(bottom - A4),
-          overflowMm: +(((bottom - A4) / 96) * 25.4).toFixed(1),
-          textChars,
-          offenders: offenders.slice(0, 12),
-          totalOffenders: offenders.length,
-        };
-      }, A4_HEIGHT_PX);
+      await mountDraft(page, raw, slug);
+      const m = await measureA4(page, { offenders: true });
 
       const contentOffenders = m.offenders.filter((o) => !o.decorative);
       report.renderOffenders = contentOffenders;

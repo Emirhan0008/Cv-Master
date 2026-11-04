@@ -12,16 +12,20 @@
  *   type payload.json | node mcp/cli.mjs apply rehber-ogretmen-2026
  *   node mcp/cli.mjs style rehber-ogretmen-2026 --template split-sidebar --density compact
  *   node mcp/cli.mjs validate rehber-ogretmen-2026
+ *   node mcp/cli.mjs fit rehber-ogretmen-2026                # A4'e gerçekten sığıyor mu?
  *   node mcp/cli.mjs list
  *   node mcp/cli.mjs export rehber-ogretmen-2026 --downloads
- *   node mcp/cli.mjs pdf rehber-ogretmen-2026 [--out ~/Downloads/cv.pdf] [--api <url>] [--token <t>]
+ *   node mcp/cli.mjs pdf rehber-ogretmen-2026 [--out ~/Downloads/cv.pdf]
  *   node mcp/cli.mjs push rehber-ogretmen-2026 [--api <url>] [--token <t>]   # siteye gönder
  *   node mcp/cli.mjs pull [slug] [--as <yerel-slug>]           # siteden çek
  *   node mcp/cli.mjs remote                                     # sitedeki CV listesi
  *
  * Çıkış: her komut tek JSON döndürür (stdout). Boru hattına uygundur.
- * En hızlı yol: model tek JSON üretir → apply --file.
+ * En hızlı yol: model tek JSON üretir → apply --file → fit → pdf.
  * pdf komutu: site headless print (http.request) → PDF.
+ *
+ * Çıkış kodları: 0 başarı · 1 kullanım/ortam hatası · 2 doğrulama veya taşma hatası
+ *               3 önizleme sunucusu kapalı
  */
 
 import fs from 'node:fs';
@@ -80,18 +84,18 @@ function readStdin() {
   }
 }
 
-/** "startDate=2013-09" biçimindeki düz anahtarları içe göm */
+/** "personalInfo.email=x" / "styles.template=y" gibi düz anahtarları içe göm */
 function expandDotted(obj) {
   const outObj = {};
   for (const [k, v] of Object.entries(obj)) {
     if (!k.includes('.')) {
-      outObj[k] = v;
+      outObj[k] = v && typeof v === 'object' && !Array.isArray(v) ? expandDotted(v) : v;
       continue;
     }
     const parts = k.split('.');
     let cur = outObj;
     for (let i = 0; i < parts.length - 1; i++) {
-      cur[parts[i]] = cur[parts[i]] || {};
+      if (typeof cur[parts[i]] !== 'object' || cur[parts[i]] === null) cur[parts[i]] = {};
       cur = cur[parts[i]];
     }
     cur[parts[parts.length - 1]] = v;
@@ -145,18 +149,20 @@ async function main() {
           'node mcp/cli.mjs remove <slug> --section <bölüm> --id <id> | --index <n>',
           'node mcp/cli.mjs style <slug> [--template <id>] [--density compact] [--font inter] [--primary #hex]',
           'node mcp/cli.mjs validate <slug>',
+          'node mcp/cli.mjs fit <slug> [--templates a,b] [--all] [--verbose] [--json]  # A4 gerçek sığma ölçümü',
           'node mcp/cli.mjs read <slug> [--out dosya.json]',
           'node mcp/cli.mjs list',
           'node mcp/cli.mjs export <slug> [--downloads]',
           'node mcp/cli.mjs preview <slug> [--out <dizin>] [--templates a,b] [--no-sheet]  # tüm şablon önizlemeleri',
           'node mcp/cli.mjs pick <slug> --template <numara|id> [--pdf] [--out <dosya>] [--downloads]  # galeriden seç',
           'node mcp/cli.mjs debug <slug> [--api <url>]                # hata analizi: ortam/şema/render/PDF/API',
-          'node mcp/cli.mjs pdf <slug> [--out <dosya>] [--api <url>] [--token <t>]',
+          'node mcp/cli.mjs pdf <slug> [--out <dosya>] [--url <önizleme-adresi>]',
           'node mcp/cli.mjs push <slug> [--api <url>] [--token <t>]   # siteye gönder',
           'node mcp/cli.mjs pull [slug] [--as <yerel-slug>]           # siteden çek',
           'node mcp/cli.mjs remote                                     # sitedeki CV listesi',
         ],
-        note: 'Her komut JSON döndürür. En hızlı yol: model tek JSON üretir → apply --file.',
+        note: 'Her komut JSON döndürür. Akış: apply --file → fit → pdf. validate bütçedir, fit gerçek A4 ölçüsüdür.',
+        exitCodes: { 0: 'başarılı', 1: 'kullanım/ortam hatası', 2: 'doğrulama veya A4 taşması', 3: 'önizleme sunucusu kapalı' },
         remote: {
           env: ['CV_API_URL (varsayılan https://cv-master-pi.vercel.app)', 'CV_API_TOKEN (zorunlu)'],
           siteButton: 'Sitede "CV Geri Çağır" → "API\'den Yükle"',
@@ -186,7 +192,10 @@ async function main() {
       const slug = positional[0] || flags.slug;
       if (!slug) fail('slug gerekli: apply <slug> --file payload.json');
       const payload = loadPayload(flags);
-      out(runCommand('apply', { ...payload, slug }));
+      const r = runCommand('apply', { ...payload, slug });
+      out(r);
+      // Doğrulama hataları boru hattında görünmez olmasın.
+      if (!r.validation.ok) process.exitCode = 2;
       return;
     }
 
@@ -251,6 +260,29 @@ async function main() {
       return;
     }
 
+    case 'fit':
+    case 'overflow':
+    case 'measure': {
+      const slug = positional[0] || flags.slug;
+      if (!slug) fail('slug gerekli: fit <slug> [--templates a,b] [--all] [--verbose] [--json]');
+
+      const scriptPath = path.join(PROJECT_DIR, 'mcp', 'fit.mjs');
+      if (!fs.existsSync(scriptPath)) fail(`Fit aracı bulunamadı: ${scriptPath}`);
+
+      const args = [scriptPath, slug];
+      if (flags.templates) args.push('--templates', String(flags.templates));
+      if (flags.all) args.push('--all');
+      if (flags.verbose || flags.v) args.push('--verbose');
+      if (flags.json) args.push('--json');
+
+      const env = { ...process.env };
+      if (flags.url) env.CV_PREVIEW_URL = String(flags.url);
+
+      const res = spawnSync(process.execPath, args, { stdio: 'inherit', cwd: PROJECT_DIR, env });
+      if (res.status !== 0) process.exitCode = res.status || 1;
+      return;
+    }
+
     case 'read': {
       const slug = positional[0] || flags.slug;
       if (!slug) fail('slug gerekli');
@@ -286,9 +318,13 @@ async function main() {
       const scriptPath = path.join(PROJECT_DIR, 'mcp', 'pdf-final.cjs');
       if (!fs.existsSync(scriptPath)) fail(`PDF uretici bulunamadi: ${scriptPath}`);
 
+      const env = { ...process.env };
+      if (flags.url) env.CV_PREVIEW_URL = String(flags.url);
+
       const res = spawnSync(process.execPath, [scriptPath, slug, outPath], {
         stdio: 'inherit',
         cwd: PROJECT_DIR,
+        env,
       });
 
       if (res.status !== 0) process.exitCode = res.status || 1;
@@ -358,6 +394,7 @@ async function main() {
       const styled = runCommand('style', { slug, template: templateId });
 
       let pdfPath = null;
+      let pdfOk = null;
       if (flags.pdf || flags.downloads) {
         pdfPath = flags.out
           ? path.resolve(String(flags.out).replace(/^~/, process.env.USERPROFILE || process.env.HOME || ''))
@@ -372,17 +409,22 @@ async function main() {
           stdio: 'inherit',
           cwd: PROJECT_DIR,
         });
+        // 2 = A4 taşması (PDF üretildi ama alt kısım kırpılıyor), 3 = sunucu kapalı
+        pdfOk = res.status === 0;
         if (res.status !== 0) process.exitCode = res.status || 1;
       }
 
       out({
-        ok: true,
+        ok: pdfOk === false ? false : true,
         slug,
         template: templateId,
         styles: styled.styles,
         pdf: pdfPath,
+        pdfOk,
         next: pdfPath
-          ? null
+          ? pdfOk === false
+            ? `Şablon sığmıyor: node mcp/cli.mjs fit ${slug} --verbose  → içeriği kısaltın`
+            : null
           : `PDF için: node mcp/cli.mjs pick ${slug} --template ${templateId} --pdf`,
       });
       return;
@@ -424,7 +466,7 @@ async function main() {
       const slug = positional[0] || flags.slug;
       if (!slug) fail('slug gerekli');
       if (!flags.yes) fail('Silmek için --yes ekleyin.');
-      const dir = path.join(process.env.CV_MASTER_DIR || path.resolve(import.meta.dirname, '..'), 'cv-data', 'drafts');
+      const dir = path.join(process.env.CV_MASTER_DIR ? path.resolve(process.env.CV_MASTER_DIR) : PROJECT_DIR, 'cv-data', 'drafts');
       const p = path.join(dir, `${slug}.json`);
       if (!fs.existsSync(p)) fail(`Taslak yok: ${slug}`);
       fs.rmSync(p, { force: true });

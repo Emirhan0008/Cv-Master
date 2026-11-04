@@ -4,9 +4,6 @@ const path = require('path');
 
 const PROJECT_DIR = path.resolve(__dirname, '..');
 
-/** A4 yüksekliği CSS px (96 dpi): 297 mm */
-const A4_HEIGHT_PX = (297 / 25.4) * 96;
-
 function loadCV(slug) {
   const draftPath = path.join(PROJECT_DIR, 'cv-data', 'drafts', slug + '.json');
   if (!fs.existsSync(draftPath)) {
@@ -37,54 +34,31 @@ async function main() {
 
   console.log('[PDF] Playwright PDF generation for:', cvTitle);
 
+  const { A4_HEIGHT_PX, PREVIEW_URL, START_HINT, checkServer, mountDraft, measureA4 } = await import(
+    './measure.mjs'
+  );
+
+  const up = await checkServer(PREVIEW_URL);
+  if (!up.ok) {
+    console.error(`[PDF] HATA: onizleme sunucusu kapali — ${PREVIEW_URL}`);
+    console.error(`[PDF]       ${up.error || `HTTP ${up.status}`}`);
+    console.error(`[PDF]       Baslat: ${START_HINT}`);
+    process.exit(3);
+  }
+
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1200, height: 800 } });
   const page = await context.newPage();
 
   try {
-    const cvRecord = Object.assign({}, cv, { id: slug, updatedAt: new Date().toISOString() });
+    await mountDraft(page, cv, slug);
 
-    await page.goto('http://localhost:3010', { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(500);
-
-    await page.evaluate((cvData) => {
-      localStorage.setItem('cv_builder_saved_cvs', JSON.stringify([cvData]));
-      localStorage.setItem('cv_builder_active_id', cvData.id || 'temp-cv');
-    }, cvRecord);
-
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(1000);
-    await page.waitForSelector('#cv-preview-page', { state: 'visible', timeout: 10000 });
-    await page.waitForTimeout(1000);
-
+    // Olcum print medyasinda: PDF ile birebir ayni geometri.
+    // ONEMLI: #cv-preview-page elementi A4'ten uzun olabilir; baseline gercek
+    // A4 yuksekligidir (1122.52 px), elementin kendi kutusu degil.
     await page.emulateMedia({ media: 'print' });
-    await page.waitForTimeout(500);
-
-    // Olcum: icerik A4 sinirini asiyor mu?
-    // ONEMLI: #cv-preview-page elementi A4'ten uzun olabilir. Baseline elementin
-    // kendi kutusu DEGIL, gercek A4 yuksekligidir (1122.52 px). Aksi halde sayfa 1
-    // disinda kalan icerik sessizce kirpilir ve "tasma yok" diye raporlanir.
-    const fit = await page.evaluate((A4) => {
-      const root = document.querySelector('#cv-preview-page');
-      const box = root.getBoundingClientRect();
-      let bottom = 0;
-      let clipped = 0;
-      for (const el of root.querySelectorAll('*')) {
-        if (el.children.length > 0) continue;
-        if (!(el.textContent || '').trim()) continue;
-        const r = el.getBoundingClientRect();
-        if (r.height <= 0) continue;
-        const rel = r.bottom - box.top;
-        if (rel > bottom) bottom = rel;
-        if (rel > A4 + 1) clipped++;
-      }
-      return {
-        contentHeight: Math.round(bottom),
-        overflowPx: Math.round(bottom - A4),
-        overflowMm: +(((bottom - A4) / 96) * 25.4).toFixed(1),
-        clippedLeaves: clipped,
-      };
-    }, A4_HEIGHT_PX);
+    await page.waitForTimeout(400);
+    const fit = await measureA4(page);
 
     await page.pdf({
       path: outPath,
@@ -107,7 +81,8 @@ async function main() {
       console.error(
         `[PDF] HATA: icerik A4 sinirini ${fit.overflowMm} mm asiyor — PDF'te ALT KISIM KIRPILIR.`,
       );
-      console.error('[PDF] Cozum: icerigi kisaltin veya styles.density="compact" yapin.');
+      console.error('[PDF] Cozum: node mcp/cli.mjs fit ' + slug + '  ile tam sayiyi gorun,');
+      console.error('[PDF]         sonra icerigi kisaltin veya styles.density="compact" yapin.');
       process.exitCode = 2;
     }
 

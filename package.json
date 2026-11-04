@@ -19,7 +19,8 @@
     "cv:test": "node mcp/test.mjs",
     "cv:templates": "node mcp/templates-check.mjs",
     "cv:preview": "node mcp/gallery.mjs",
-    "cv:debug": "node mcp/debug.mjs"
+    "cv:debug": "node mcp/debug.mjs",
+    "cv:fit": "node mcp/fit.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
