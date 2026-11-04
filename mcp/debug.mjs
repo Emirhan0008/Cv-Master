@@ -24,6 +24,9 @@ const require = createRequire(import.meta.url);
 const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DOWNLOADS = path.join(process.env.USERPROFILE || process.env.HOME || PROJECT_DIR, 'Downloads');
 
+/** A4 yüksekliği CSS px (96 dpi): 297 mm — PDF kırpma sınırı */
+const A4_HEIGHT_PX = (297 / 25.4) * 96;
+
 const argv = process.argv.slice(2);
 const flag = (name) => {
   const i = argv.indexOf(`--${name}`);
@@ -190,7 +193,7 @@ async function main() {
       await page.waitForSelector('#cv-preview-page', { state: 'visible', timeout: 15000 });
       await page.waitForTimeout(900);
 
-      const m = await page.evaluate(() => {
+      const m = await page.evaluate((A4) => {
         const root = document.querySelector('#cv-preview-page');
         const box = root.getBoundingClientRect();
         const offenders = [];
@@ -204,39 +207,45 @@ async function main() {
           if (leaf && txt) {
             textChars += txt.length;
             const r = el.getBoundingClientRect();
-            if (r.height > 0 && r.bottom > bottom) bottom = r.bottom;
+            if (r.height > 0 && r.bottom - box.top > bottom) bottom = r.bottom - box.top;
           }
           const r = el.getBoundingClientRect();
           if (r.width < 1 || r.height < 1) continue;
-          if (r.bottom > box.bottom + 1 || r.right > box.right + 1) {
+          const relBottom = r.bottom - box.top;
+          const relRight = r.right - box.left;
+          if (relBottom > A4 + 1 || relRight > box.width + 1) {
             offenders.push({
               tag: el.tagName.toLowerCase(),
               text: (el.textContent || '').trim().slice(0, 60),
-              overBottom: Math.round(r.bottom - box.bottom),
-              overRight: Math.round(r.right - box.right),
+              overBottom: Math.round(relBottom - A4),
+              overRight: Math.round(relRight - box.width),
               printable: !!(el.offsetParent || cs.position === 'fixed'),
               decorative: cs.position === 'absolute' && !(el.textContent || '').trim(),
             });
           }
         }
         return {
-          overflowMm: +(((bottom - box.bottom) / 96) * 25.4).toFixed(1),
+          contentHeight: Math.round(bottom),
+          overflowPx: Math.round(bottom - A4),
+          overflowMm: +(((bottom - A4) / 96) * 25.4).toFixed(1),
           textChars,
           offenders: offenders.slice(0, 12),
           totalOffenders: offenders.length,
         };
-      });
+      }, A4_HEIGHT_PX);
 
       const contentOffenders = m.offenders.filter((o) => !o.decorative);
       report.renderOffenders = contentOffenders;
 
       check(
         'Render taşması',
-        contentOffenders.length ? 'fail' : m.overflowMm > 0 ? 'warn' : 'ok',
-        `${m.overflowMm} mm · ${contentOffenders.length} içerik öğesi sınırı aşıyor` +
+        contentOffenders.length ? 'fail' : m.overflowPx > 1 ? 'fail' : 'ok',
+        `içerik ${m.contentHeight}px / A4 ${Math.round(A4_HEIGHT_PX)}px · ${m.overflowMm} mm · ` +
+          `${contentOffenders.length} içerik öğesi A4 sınırını aşıyor` +
           (m.offenders.length !== contentOffenders.length
             ? ` (${m.offenders.length - contentOffenders.length} dekoratif öğe yoksayıldı)`
-            : ''),
+            : '') +
+          (m.overflowPx > 1 ? ' → PDF\'te alt kısım kırpılır!' : ''),
       );
       for (const o of contentOffenders) {
         const mm = ((Math.max(o.overBottom, o.overRight) / 96) * 25.4).toFixed(1);

@@ -23,6 +23,9 @@ const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const DOWNLOADS = path.join(process.env.USERPROFILE || process.env.HOME || PROJECT_DIR, 'Downloads');
 const BASE_URL = process.env.CV_PREVIEW_URL || 'http://localhost:3010';
 
+/** A4 yüksekliği CSS px (96 dpi): 297 mm — PDF kırpma sınırı */
+const A4_HEIGHT_PX = (297 / 25.4) * 96;
+
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
   if (i === -1) return fallback;
@@ -94,7 +97,7 @@ async function main() {
     const el = page.locator('#cv-preview-page').first();
     await el.screenshot({ path: png });
 
-    const metrics = await page.evaluate(() => {
+    const metrics = await page.evaluate((A4) => {
       const root = document.querySelector('#cv-preview-page');
       const box = root.getBoundingClientRect();
       let bottom = 0;
@@ -105,20 +108,22 @@ async function main() {
         if (txt && node.children.length === 0) {
           textChars += txt.length;
           const r = node.getBoundingClientRect();
-          if (r.height > 0 && r.bottom > bottom) bottom = r.bottom;
-          if (r.height > 0 && r.bottom > box.bottom + 1) clipped++;
+          const rel = r.bottom - box.top;
+          if (r.height > 0 && rel > bottom) bottom = rel;
+          if (r.height > 0 && rel > A4 + 1) clipped++;
         }
       }
       return {
-        overflowMm: +(((bottom - box.bottom) / 96) * 25.4).toFixed(1),
+        overflowPx: Math.round(bottom - A4),
+        overflowMm: +(((bottom - A4) / 96) * 25.4).toFixed(1),
         clippedLeaves: clipped,
         textChars,
         pageHeightPx: Math.round(box.height),
       };
-    });
+    }, A4_HEIGHT_PX);
 
     const fill = +(metrics.textChars / tpl.pageBudget).toFixed(2);
-    const singlePage = metrics.overflowMm <= 0 && metrics.clippedLeaves === 0;
+    const singlePage = metrics.overflowPx <= 1 && metrics.clippedLeaves === 0;
 
     results.push({
       index: i + 1,

@@ -4,6 +4,9 @@ const path = require('path');
 
 const PROJECT_DIR = path.resolve(__dirname, '..');
 
+/** A4 yüksekliği CSS px (96 dpi): 297 mm */
+const A4_HEIGHT_PX = (297 / 25.4) * 96;
+
 function loadCV(slug) {
   const draftPath = path.join(PROJECT_DIR, 'cv-data', 'drafts', slug + '.json');
   if (!fs.existsSync(draftPath)) {
@@ -58,7 +61,10 @@ async function main() {
     await page.waitForTimeout(500);
 
     // Olcum: icerik A4 sinirini asiyor mu?
-    const fit = await page.evaluate(() => {
+    // ONEMLI: #cv-preview-page elementi A4'ten uzun olabilir. Baseline elementin
+    // kendi kutusu DEGIL, gercek A4 yuksekligidir (1122.52 px). Aksi halde sayfa 1
+    // disinda kalan icerik sessizce kirpilir ve "tasma yok" diye raporlanir.
+    const fit = await page.evaluate((A4) => {
       const root = document.querySelector('#cv-preview-page');
       const box = root.getBoundingClientRect();
       let bottom = 0;
@@ -68,14 +74,17 @@ async function main() {
         if (!(el.textContent || '').trim()) continue;
         const r = el.getBoundingClientRect();
         if (r.height <= 0) continue;
-        if (r.bottom > bottom) bottom = r.bottom;
-        if (r.bottom > box.bottom + 1) clipped++;
+        const rel = r.bottom - box.top;
+        if (rel > bottom) bottom = rel;
+        if (rel > A4 + 1) clipped++;
       }
       return {
-        overflowMm: +(((bottom - box.bottom) / 96) * 25.4).toFixed(1),
+        contentHeight: Math.round(bottom),
+        overflowPx: Math.round(bottom - A4),
+        overflowMm: +(((bottom - A4) / 96) * 25.4).toFixed(1),
         clippedLeaves: clipped,
       };
-    });
+    }, A4_HEIGHT_PX);
 
     await page.pdf({
       path: outPath,
@@ -90,8 +99,17 @@ async function main() {
     const pages = countPdfPages(outPath);
 
     console.log('[PDF] Sayfa:', pages, '| Boyut:', Math.round(stats.size / 1024), 'KB');
+    console.log('[PDF] Icerik yuksekligi:', fit.contentHeight, 'px / A4', Math.round(A4_HEIGHT_PX), 'px');
     console.log('[PDF] Tasma:', fit.overflowMm, 'mm | Kirpilan oge:', fit.clippedLeaves);
     console.log('[PDF] Dosya:', outPath);
+
+    if (fit.overflowPx > 1) {
+      console.error(
+        `[PDF] HATA: icerik A4 sinirini ${fit.overflowMm} mm asiyor — PDF'te ALT KISIM KIRPILIR.`,
+      );
+      console.error('[PDF] Cozum: icerigi kisaltin veya styles.density="compact" yapin.');
+      process.exitCode = 2;
+    }
 
     if (pages !== 1) {
       console.error('[PDF] UYARI: tek sayfa bekleniyordu,', pages, 'sayfa uretildi.');
