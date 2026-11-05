@@ -224,6 +224,112 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
   const [containerWidth, setContainerWidth] = useState(794);
   const [previewHeight, setPreviewHeight] = useState(1123);
 
+  /* ---------------------------------------------------------------- */
+  /* A4 otomatik sığdırma (auto-fit)                                  */
+  /* ---------------------------------------------------------------- */
+  // Şablonların dikey boşluğu içerikten bağımsız olarak çok farklı
+  // (depth3d 1 kolonda ~1900px, modern-geometric ~1070px). İçeriği her
+  // şablona göre yeniden yazmak yerine, içerik kabı ölçülür ve A4'e
+  // sığmıyorsa yalnızca o kadar küçültülür.
+  //
+  // Kullanılan birim `zoom`: Chromium baskıda ve PDF'te destekler, alt
+  // öğelerin px genişliklerini/flex ölçülerini bozmadan bütün kutuyu
+  // ölçekler (transform:scale ise yerleşimi değiştirmez, boşluk bırakır).
+  const fitRef = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState<{ scale: number; minHeightPx: number | null }>({ scale: 1, minHeightPx: null });
+  const fitRefState = useRef(fit);
+  fitRefState.current = fit;
+
+  const A4_HEIGHT_PX = (297 / 25.4) * 96;
+  // Okunabilirlik tabanı: bundan fazla küçültme yazıyı okunamaz yapar.
+  const MIN_FIT_SCALE = 0.56;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const run = () => {
+      if (cancelled) return;
+      // `document.getElementById` DEĞİL: bileşen iki kez monte ediliyor
+      // (masaüstü + mobil). getElementById her zaman ilk —gizli— kopyayı
+      // döndürüyor, mobilde yükseklik 0 ölçülüp önizleme boş görünüyordu.
+      const page = containerRef.current;
+      const inner = fitRef.current;
+      if (!page || !inner) return;
+
+      const cs = getComputedStyle(page);
+      const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+      const availH = A4_HEIGHT_PX - padY;
+
+      // Genişlik telafisi (100/ölçek) satır kırılmalarını değiştirdiği için
+      // yükseklik ölçekle doğrusal DEĞİL. Bu yüzden tek adımlı hesap yerine
+      // ikili arama: A4'e sığan EN BÜYÜK ölçeği bul (en okunur sonuç).
+      const apply = (z: number, withMinHeight = false) => {
+        // SADECE zoom. `width: 100/z%` denendi: yüzde, zoom uygulandıktan
+        // sonra çözüldüğü için kutu A4'ten geniş çıkıp sağdan kırpılıyor.
+        // Chromium'da zoom, yerleşim genişliğini kendisi telafi eder
+        // (942px yerleşim × 0.8 = 753px görünen) → tam genişlik korunur.
+        inner.style.zoom = String(z);
+        // Arka planlı şablonlarda (sidebar) renk A4'ün altına kadar uzansın.
+        // ÖNEMLİ: minHeight yalnızca aramanın SONUNDA uygulanır; arama
+        // sırasında uygulanırsa kutuyu kendi hedef yüksekliğine sabitler ve
+        // ölçüm her zaman "sığdı" der → gereksiz küçültme.
+        inner.style.minHeight = withMinHeight && z < 1 ? `${Math.round(availH / z)}px` : '';
+      };
+
+      let lo = MIN_FIT_SCALE;
+      let hi = 1;
+      // 1.0 zaten sığıyorsa hiç küçültme.
+      apply(1);
+      if (inner.getBoundingClientRect().height <= availH + 1) {
+        const prev = fitRefState.current;
+        if (prev.scale !== 1 || prev.minHeightPx !== null) setFit({ scale: 1, minHeightPx: null });
+        return;
+      }
+
+      let best = MIN_FIT_SCALE;
+      for (let i = 0; i < 7; i++) {
+        const mid = +((lo + hi) / 2).toFixed(3);
+        apply(mid);
+        const h = inner.getBoundingClientRect().height;
+        if (h <= availH + 1) {
+          best = mid;
+          lo = mid;
+        } else {
+          hi = mid;
+        }
+      }
+
+      const minHeightPx = best < 1 ? Math.round(availH / best) : null;
+      apply(best, true);
+      const prev = fitRefState.current;
+      if (Math.abs(best - prev.scale) > 0.002 || minHeightPx !== prev.minHeightPx) {
+        setFit({ scale: best, minHeightPx });
+      }
+    };
+
+    // Fontlar yüklenmeden ölçmek yanlış sonuç verir (metin genişliği değişir).
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(run, 120);
+    };
+
+    schedule();
+    if (document.fonts?.ready) document.fonts.ready.then(schedule).catch(() => {});
+    const onResize = () => schedule();
+    window.addEventListener('resize', onResize);
+    // Ekran ↔ baskı medyası geçişinde yükseklik değişir (PDF bu yolu kullanır).
+    const mq = window.matchMedia('print');
+    mq.addEventListener?.('change', schedule);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('resize', onResize);
+      mq.removeEventListener?.('change', schedule);
+    };
+  }, [cvData, styles.template, styles.density, styles.fontSize, styles.lineHeight, containerWidth, zoomScale]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const element = wrapperRef.current;
@@ -242,7 +348,8 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
   }, []);
 
   useEffect(() => {
-    const pageEl = document.getElementById('cv-preview-page');
+    // Yine kendi örneğimizi ölçüyoruz (bkz. yukarıdaki auto-fit notu).
+    const pageEl = containerRef.current;
     if (pageEl) {
       const updateHeight = () => {
         setPreviewHeight(pageEl.scrollHeight);
@@ -251,7 +358,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
       const timer = setTimeout(updateHeight, 150);
       return () => clearTimeout(timer);
     }
-  }, [cvData, containerWidth, zoomScale]);
+  }, [cvData, containerWidth, zoomScale, fit]);
 
   // Auto-scale ratio for mobile devices to keep uncompromised A4 proportions without content squishing
   const autoScale = (mobileFit && containerWidth < 794) ? containerWidth / 794 : 1.0;
@@ -402,7 +509,16 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
 
   const getBlockCardClass = (sectionId: string) => {
     if (styles.template !== 'depth3d') return 'w-full';
-    return "p-5 rounded-2xl bg-white/95 border border-white/60 shadow-[0_15px_30px_rgba(0,0,0,0.06),0_10px_15px_-3px_rgba(0,0,0,0.04),inset_0_1px_2px_rgba(255,255,255,0.8),inset_0_-1px_3px_rgba(0,0,0,0.02)] border-b-4 border-r-2 border-slate-300/40 hover:border-b-8 hover:border-r-4 hover:-translate-y-1.5 hover:shadow-[0_25px_45px_rgba(0,0,0,0.1),0_12px_20px_-3px_rgba(0,0,0,0.06)] hover:brightness-[1.01] transition-all duration-300 relative z-10 w-full";
+    // Dikey boşluk sıkı: depth3d kart tasarımı p-5 ile tek başına 1900px'e
+    // çıkıyordu ve otomatik sığdırma %64'e kadar küçültmek zorunda kalıyordu
+    // (7 px yazı). p-3.5 + daha sıkı gölge ile doğal yükseklik düşer,
+    // ölçek %80 civarında kalır → yazı okunur kalır.
+    //
+    // Kart ızgarası: şablon tek kolonda 6 kartı üst üste diziyordu. Geniş
+    // kartlar (yetkinlikler, özet) iki kolon kaplar; deneyim+eğitim ve
+    // projeler+ek bölümler yan yana oturur → ~500px kazanç.
+    const span = ['skills', 'summary', 'experience', 'projects'].includes(sectionId) ? 'col-span-2' : '';
+    return `${span} p-3.5 rounded-2xl bg-white/95 border border-white/60 shadow-[0_10px_22px_rgba(0,0,0,0.05),0_6px_10px_-3px_rgba(0,0,0,0.03),inset_0_1px_2px_rgba(255,255,255,0.8)] border-b-2 border-r border-slate-300/40 hover:border-b-4 hover:border-r-2 hover:-translate-y-1 hover:shadow-[0_18px_32px_rgba(0,0,0,0.09)] transition-all duration-300 relative z-10 w-full`;
   };
 
   // Base64 or standard visual background for the template
@@ -610,13 +726,13 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
   const renderPersonal = () => {
     if (styles.template === 'depth3d') {
       return (
-        <div className="p-6 rounded-2xl bg-white/95 border border-white/60 shadow-[0_15px_30px_rgba(0,0,0,0.06),0_10px_15px_-3px_rgba(0,0,0,0.04),inset_0_1px_2px_rgba(255,255,255,0.8),inset_0_-1px_3px_rgba(0,0,0,0.02)] border-b-4 border-r-2 border-slate-300/40 hover:-translate-y-1 hover:shadow-[0_20px_35px_rgba(0,0,0,0.09)] transition-all duration-300 flex flex-col md:flex-row gap-5 items-center justify-between select-text relative z-10">
-          <div className="flex flex-col md:flex-row items-center gap-5 text-center md:text-left">
+        <div className="p-4 rounded-2xl bg-white/95 border border-white/60 shadow-[0_10px_22px_rgba(0,0,0,0.05),0_6px_10px_-3px_rgba(0,0,0,0.03),inset_0_1px_2px_rgba(255,255,255,0.8)] border-b-2 border-r border-slate-300/40 hover:-translate-y-1 hover:shadow-[0_18px_32px_rgba(0,0,0,0.09)] transition-all duration-300 flex flex-col md:flex-row gap-4 items-center justify-between select-text relative z-10">
+          <div className="flex flex-col md:flex-row items-center gap-4 text-center md:text-left">
             {personalInfo.photoVisible && personalInfo.avatarUrl && (
               <img
                 src={personalInfo.avatarUrl}
                 alt={personalInfo.name}
-                className="w-28 h-28 rounded-2xl object-cover border-4 border-violet-100 shadow-[0_10px_20px_rgba(0,0,0,0.12),0_3px_6px_rgba(0,0,0,0.08)] [transform:translateZ(15px)]"
+                className="w-24 h-24 rounded-2xl object-cover border-4 border-violet-100 shadow-[0_8px_16px_rgba(0,0,0,0.10)] shrink-0 [transform:translateZ(15px)]"
                 referrerPolicy="no-referrer"
                 crossOrigin="anonymous"
               />
@@ -1299,7 +1415,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                       <Editable path={['projects', proj.id, 'name']} text={proj.name} />
                     </h4>
                     {proj.url && (
-                      <span className="text-xs text-indigo-500 font-medium shrink-0 max-w-[45%] break-all text-right">
+                      <span className="text-xs text-indigo-500 font-medium shrink-0 max-w-[45%] break-words [overflow-wrap:anywhere] text-right">
                         <Editable path={['projects', proj.id, 'url']} text={proj.url} />
                       </span>
                     )}
@@ -1325,7 +1441,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
         return (
           <div key="skills" className={getBlockCardClass('skills')}>
             {renderSectionHeader('Yetkinlikler ve Beceriler')}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className={styles.template === 'depth3d' ? 'grid grid-cols-1 md:grid-cols-3 gap-3' : 'grid grid-cols-1 md:grid-cols-2 gap-4'}>
               {skills.map((cat) => (
                 <div key={cat.id} className="space-y-1.5">
                   {shouldShowCategoryHeader(cat.categoryName) && (
@@ -1337,7 +1453,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                     {cat.skills.map((skill, sIdx) => {
                       if (styles.template === 'depth3d') {
                         return (
-                          <span key={sIdx} className="bg-white/90 shadow-sm border border-slate-100 rounded-lg px-2.5 py-1 text-xs text-slate-700 inline-flex items-center max-w-full flex-wrap gap-1 mb-1">
+                          <span key={sIdx} className="bg-white/90 shadow-sm border border-slate-100 rounded-lg px-2 py-0.5 text-[10px] text-slate-700 inline-flex items-center max-w-full flex-wrap gap-1 mb-0.5">
                             <Editable path={['skills', cat.id, 'skillName', sIdx.toString()]} text={skill.name} className="px-0 py-0 text-slate-700 leading-snug break-words" />
                             <span className="inline-flex text-amber-500 transform scale-75 align-middle leading-none shrink-0">
                               {'★'.repeat(skill.level)}{'☆'.repeat(5 - skill.level)}
@@ -1504,13 +1620,18 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
       </div>
 
       {/* Zoomable Container Wrapper */}
+      {/* `transformOrigin: 'top left'` + hesaplanan `marginLeft` kullanılıyor:
+          'top center' iken kutu (794px) bulunduğu kaptan geniş olduğunda
+          (iki sidebar açık, dar pencere) kendi merkezine göre ölçeklenip
+          SAĞDAN taşıyordu (1280px'te 177px kırpılıyordu). */}
       <div 
         id="cv-zoom-wrapper"
         className="relative origin-top py-2 print:transform-none print:m-0 print:p-0 print:w-full mx-auto"
         style={{
           width: '794px',
           transform: `scale(${renderedScale})`,
-          transformOrigin: 'top center',
+          transformOrigin: 'top left',
+          marginLeft: `${Math.max(0, (containerWidth - 794 * renderedScale) / 2)}px`,
           transition: 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)',
           height: `${scaledHeight}px`,
         }}
@@ -1535,6 +1656,22 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
             <div className="absolute -bottom-20 left-10 w-72 h-72 rounded-full bg-teal-300/20 blur-[80px]" />
           </div>
         )}
+        {/*
+          A4 otomatik sığdırma kabı.
+          İçerik doğal yüksekliği A4'ü aşıyorsa yalnızca bu kap `zoom` ile
+          küçültülür; genişlik 100/ölçek verilerek görsel genişlik tam A4
+          kalır (yan renkli panel sağ kenara kadar uzanır). Ölçek 1 iken
+          hiçbir şey değişmez.
+        */}
+        <div
+          ref={fitRef}
+          data-cv-fit={fit.scale}
+          className="flex flex-col w-full"
+          style={{
+            zoom: fit.scale,
+            ...(fit.minHeightPx ? { minHeight: `${fit.minHeightPx}px` } : {}),
+          }}
+        >
         {styles.template === 'split-sidebar' ? (
           // Split Sidebar Layout (Image 2 style)
           <div className="flex-1 flex min-h-[297mm] h-full items-stretch overflow-hidden">
@@ -1725,20 +1862,30 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   <div className={`relative transition-all duration-300 select-none ${styles.density === 'compact' ? 'w-24 h-24' : 'w-34 h-34'}`}>
                     <svg viewBox="0 0 100 100" className="w-full h-full select-none pointer-events-none drop-shadow-md">
                       <defs>
+                        {/* Yatay kenarlı (flat-top) altıgen: sivri tepe yok, başın üstü
+                            çerçevenin daralan köşesine denk gelmez. */}
                         <clipPath id="avatar-hex-clip-pdf">
-                          <polygon points="50,0 93.3,25 93.3,75 50,100 6.7,75 6.7,25" />
+                          <polygon points="50,2 95.7,22.5 95.7,77.5 50,98 4.3,77.5 4.3,22.5" />
                         </clipPath>
                       </defs>
-                      {/* Outer orange frame */}
-                      <polygon points="50,0 93.3,25 93.3,75 50,100 6.7,75 6.7,25" fill="#f59e0b" />
-                      {/* Inner clipped image with uniform border */}
-                      <g transform="translate(50, 50) scale(0.92) translate(-50, -50)">
+                      {/* Dış çerçeve */}
+                      <polygon points="50,2 95.7,22.5 95.7,77.5 50,98 4.3,77.5 4.3,22.5" fill="#f59e0b" />
+                      {/*
+                        Kırpma (crop) düzeltmesi:
+                        - Preserve "xMidYMin slice": portre fotoğrafta fazlalık ÜSTTEN değil
+                          ALTTAN kırpılır, böylece başın üstü kesilmez.
+                        - scale(0.9) → çerçeve ile fotoğraf arasında eşit iç boşluk.
+                        - translate(0,3) → tepe noktasına yapışmayı önler.
+                      */}
+                      <g transform="translate(50, 50) scale(0.9) translate(-50, -50)">
                         <image
                           href={personalInfo.avatarUrl}
+                          x="0"
+                          y="3"
                           width="100"
                           height="100"
                           clipPath="url(#avatar-hex-clip-pdf)"
-                          preserveAspectRatio="xMidYMid slice"
+                          preserveAspectRatio="xMidYMin slice"
                           referrerPolicy="no-referrer"
                           crossOrigin="anonymous"
                         />
@@ -1825,7 +1972,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                         {socialLinks.map((link) => (
                           <div key={link.id} className="flex items-center gap-1 text-[9.5px]">
                             <span className="text-amber-400 font-semibold uppercase shrink-0">{link.platform}:</span>
-                            <span className="underline text-slate-200 whitespace-nowrap text-[9px] leading-tight">{formatSocialUrl(link.url)}</span>
+                            <span className="underline text-slate-200 break-all [overflow-wrap:anywhere] text-[9px] leading-tight">{formatSocialUrl(link.url)}</span>
                           </div>
                         ))}
                       </div>
@@ -2012,9 +2159,12 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                       <span className="text-[8px] uppercase tracking-wider text-white/40 font-sans font-bold">Sosyal Medya / Bağlantılar</span>
                       <div className="space-y-0.5 mt-0.5">
                         {socialLinks.map((link) => (
-                          <div key={link.id} className="flex items-center justify-center gap-1 text-[9.5px]">
-                            <span className="text-white/60 font-semibold uppercase">{link.platform}:</span>
-                            <span className="underline text-white/90 break-all">{link.url}</span>
+                          // Dar sidebar: etiket ile adres aynı satırda sığmayınca
+                          // adres tek harflik parçalara bölünüyordu ("…3357b5" +
+                          // "109"). Etiket üst satıra, adres tam genişliğe alınır.
+                          <div key={link.id} className="flex flex-col text-[9.5px] leading-tight">
+                            <span className="text-white/60 font-semibold uppercase text-[8px] tracking-wide">{link.platform}</span>
+                            <span className="underline text-white/90 break-all [overflow-wrap:anywhere]">{formatSocialUrl(link.url)}</span>
                           </div>
                         ))}
                       </div>
@@ -2217,8 +2367,8 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                         <span className="text-[8px] uppercase text-white/40 font-bold">Sosyal Medya</span>
                         {socialLinks.map((link) => (
                           <div key={link.id} className="text-[9.5px]">
-                            <span className="font-semibold text-white/70">{link.platform}: </span>
-                            <span className="underline break-all text-amber-300">{link.url}</span>
+                            <span className="font-semibold text-white/70 shrink-0">{link.platform}: </span>
+                            <span className="underline break-all [overflow-wrap:anywhere] text-amber-300">{formatSocialUrl(link.url)}</span>
                           </div>
                         ))}
                       </div>
@@ -2373,9 +2523,11 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   <Editable path={['personalInfo', 'title']} text={personalInfo.title} />
                 </p>
 
-                {/* Profile short summary if available inside sidebar */}
+                {/* Profile short summary if available inside sidebar.
+                    `line-clamp-4` kaldırıldı: print medyasında Chrome -webkit-box
+                    kırpmasını uygulamıyor, 5. satır yarım kesiliyordu. */}
                 {personalInfo.summary && (
-                  <p className="text-[9px] text-[#a3a3a3] text-center leading-relaxed mt-2.5 line-clamp-4 border-t border-white/5 pt-2 w-full">
+                  <p className="text-[9px] text-[#a3a3a3] text-center leading-relaxed mt-2.5 border-t border-white/5 pt-2 w-full">
                     <Editable path={['personalInfo', 'summary']} text={personalInfo.summary} />
                   </p>
                 )}
@@ -2460,8 +2612,8 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                       {socialLinks.map((link) => (
                         <div key={link.id} className="flex items-center gap-2 text-[9.5px]">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-                          <span className="text-amber-400 font-semibold">{link.platform}:</span>
-                          <span className="underline text-slate-300 break-all">{link.url}</span>
+                          <span className="text-amber-400 font-semibold shrink-0">{link.platform}:</span>
+                          <span className="underline text-slate-300 break-all [overflow-wrap:anywhere] min-w-0">{formatSocialUrl(link.url)}</span>
                         </div>
                       ))}
                     </div>
@@ -2487,9 +2639,17 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                       BECERİLER
                     </h4>
                   </div>
-                  <div className="space-y-2">
-                    {skills.slice(0, 1).map((cat) => (
-                      <div key={cat.id} className="space-y-2">
+                  <div className="space-y-2.5">
+                    {/* Tüm kategoriler basılır. Önceden `slice(0, 1)` vardı: yalnız
+                        ilk kategori (4 beceri) görünüyor, kalan 8 beceri CV'de hiç
+                        yer almıyordu ve sidebar'ın altı boş kalıyordu. */}
+                    {skills.map((cat) => (
+                      <div key={cat.id} className="space-y-1.5">
+                        {shouldShowCategoryHeader(cat.categoryName) && (
+                          <span className="text-[8px] font-extrabold tracking-widest uppercase text-slate-400 block">
+                            <Editable path={['skills', cat.id, 'categoryName']} text={cat.categoryName} />
+                          </span>
+                        )}
                         {cat.skills.map((sk, sIdx) => {
                           const rating = sk.level;
                           return (
@@ -2528,10 +2688,10 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   </div>
                 )}
 
-                {/* Right main sections (excludes personal context as it sits in sidebar) */}
+                {/* Right main sections (personal context ve beceriler sidebar'da basılıyor) */}
                 <div className="flex flex-col gap-4 select-text">
                   {sectionOrder
-                    .filter((x) => x !== 'personal' && x !== 'summary')
+                    .filter((x) => x !== 'personal' && x !== 'summary' && x !== 'skills')
                     .map((sectionId) => {
                       return renderSection(sectionId);
                     })}
@@ -2558,7 +2718,13 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
             {renderPersonal()}
 
             {/* Dynamic Re-orderable CV sections */}
-            <div className={`flex flex-col ${styles.density === 'compact' ? 'gap-3' : 'gap-5'} select-text`}>
+            <div
+              className={
+                styles.template === 'depth3d'
+                  ? `grid grid-cols-2 items-start ${styles.density === 'compact' ? 'gap-2.5' : 'gap-4'} [grid-auto-flow:dense] select-text`
+                  : `flex flex-col ${styles.density === 'compact' ? 'gap-3' : 'gap-5'} select-text`
+              }
+            >
               {sectionOrder.map((sectionId) => renderSection(sectionId))}
             </div>
           </div>
@@ -2575,6 +2741,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   </div>

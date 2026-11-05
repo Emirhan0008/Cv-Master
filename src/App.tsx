@@ -208,7 +208,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [cvData, cvHistory.length]);
 
-  // Left Sidebar delayed hover handlers
+  // Sol Sidebar delayed hover handlers
   const handleLeftMouseEnter = () => {
     if (leftLeaveTimeoutRef.current) {
       clearTimeout(leftLeaveTimeoutRef.current);
@@ -217,6 +217,12 @@ export default function App() {
     if (!isSidebarHovered && !leftHoverTimeoutRef.current) {
       leftHoverTimeoutRef.current = setTimeout(() => {
         setIsSidebarHovered(true);
+        // İki drawer aynı anda açıkken orta alan 1280px'te 440px'e düşüyordu;
+        // CV önizlemesi okunamaz hale geliyordu. Dar pencerede karşı tarafı kapat.
+        if (window.innerWidth < 1360) {
+          setIsRightSidebarOpen(false);
+          setIsRightSidebarHovered(false);
+        }
         leftHoverTimeoutRef.current = null;
       }, 300); // 300ms delay to open
     }
@@ -244,6 +250,11 @@ export default function App() {
     if (!isRightSidebarHovered && !rightHoverTimeoutRef.current) {
       rightHoverTimeoutRef.current = setTimeout(() => {
         setIsRightSidebarHovered(true);
+        // Dar pencerede iki drawer birlikte açılmasın (orta alan korunur).
+        if (window.innerWidth < 1360) {
+          setIsSidebarOpen(false);
+          setIsSidebarHovered(false);
+        }
         rightHoverTimeoutRef.current = null;
       }, 300); // 300ms delay to open
     }
@@ -1466,7 +1477,7 @@ ${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
               <h1 className="text-sm font-extrabold tracking-tight flex items-center gap-1.5 leading-none">
                 CV-Master <span className="text-[9px] font-bold text-fuchsia-400 bg-fuchsia-500/10 px-1.5 py-0.5 rounded-full border border-fuchsia-500/20">PRO</span>
               </h1>
-              <p className="text-[10px] text-gray-400 font-medium mt-0.5">
+              <p className="hidden lg:block text-[10px] text-gray-400 font-medium mt-0.5 whitespace-nowrap">
                 Vektörel ATS Dostu Profesyonel Sistem
               </p>
             </div>
@@ -1474,7 +1485,7 @@ ${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
             {/* Aktif CV adı — salt gösterim. Değiştirmek için üstteki "CV Geri Çağır" kullanılır. */}
             <div className="hidden sm:flex items-center gap-2 bg-[#1A1D23] border border-[#2D3139] rounded-lg px-2.5 py-1 ml-1">
               <HardDrive className="w-3.5 h-3.5 text-teal-400/70 shrink-0" />
-              <div className="max-w-[130px] md:max-w-[200px] truncate">
+              <div className="max-w-[130px] md:max-w-[200px] xl:max-w-[340px] truncate" title={cvData.title || cvData.personalInfo?.name || 'Yeni CV'}>
                 <span className="text-[8px] uppercase tracking-wider text-gray-500 block font-mono leading-none">Aktif CV</span>
                 <span className="text-[11px] font-bold text-gray-300 truncate block">
                   {cvData.title || cvData.personalInfo?.name || 'Yeni CV'}
@@ -1707,11 +1718,20 @@ ${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
               leftHoverTimeoutRef.current = null;
               leftLeaveTimeoutRef.current = null;
 
-              if (isSidebarOpen || isSidebarHovered) {
+              // Hover ile açılmış menüye tıklamak onu SABİTLER (kapatmaz).
+              // Önceden `isSidebarOpen || isSidebarHovered` birlikte kontrol
+              // edildiği için, üzerine gelince açılan menü oka tıklanınca
+              // kapanıyordu; kullanıcı "sabitle" beklerken menü kayboluyordu.
+              if (isSidebarOpen) {
                 setIsSidebarOpen(false);
                 setIsSidebarHovered(false);
               } else {
                 setIsSidebarOpen(true);
+                setIsSidebarHovered(false);
+                if (window.innerWidth < 1360) {
+                  setIsRightSidebarOpen(false);
+                  setIsRightSidebarHovered(false);
+                }
               }
             }}
             onMouseEnter={handleLeftMouseEnter}
@@ -1728,7 +1748,7 @@ ${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
             {isSidebarOpen || isSidebarHovered ? (
               <ChevronLeft className="w-5 h-5 text-teal-400 group-hover:scale-110 transition-transform" />
             ) : (
-              <ChevronRight className="w-5 h-5 text-teal-400 group-hover:scale-110 transition-transform animate-bounce" />
+              <ChevronRight className="w-5 h-5 text-teal-400 group-hover:scale-110 transition-transform" />
             )}
           </button>
 
@@ -1782,11 +1802,17 @@ ${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
               rightHoverTimeoutRef.current = null;
               rightLeaveTimeoutRef.current = null;
 
-              if (isRightSidebarOpen || isRightSidebarHovered) {
+              // Hover ile açılmış menüye tıklamak onu SABİTLER (kapatmaz).
+              if (isRightSidebarOpen) {
                 setIsRightSidebarOpen(false);
                 setIsRightSidebarHovered(false);
               } else {
                 setIsRightSidebarOpen(true);
+                setIsRightSidebarHovered(false);
+                if (window.innerWidth < 1360) {
+                  setIsSidebarOpen(false);
+                  setIsSidebarHovered(false);
+                }
               }
             }}
             onMouseEnter={handleRightMouseEnter}
@@ -1803,7 +1829,7 @@ ${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
             {isRightSidebarOpen || isRightSidebarHovered ? (
               <ChevronRight className="w-5 h-5 text-fuchsia-400 group-hover:scale-110 transition-transform" />
             ) : (
-              <ChevronLeft className="w-5 h-5 text-fuchsia-400 group-hover:scale-110 transition-transform animate-bounce" />
+              <ChevronLeft className="w-5 h-5 text-fuchsia-400 group-hover:scale-110 transition-transform" />
             )}
           </button>
 
