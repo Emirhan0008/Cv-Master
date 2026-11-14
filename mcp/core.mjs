@@ -47,7 +47,7 @@ export const TEMPLATES = [
 
 export const TEMPLATE_IDS = TEMPLATES.map((t) => t.id);
 export const FONTS = ['inter', 'spaceGrotesk', 'playfair', 'jetbrains'];
-export const FONT_SIZES = ['xs', 'sm', 'md', 'lg'];
+export const FONT_SIZES = ['xxs', 'xs', 'sm', 'md', 'lg'];
 export const LINE_HEIGHTS = ['tight', 'normal', 'relaxed'];
 export const DENSITIES = ['compact', 'comfortable', 'loose'];
 export const SHADOWS = ['none', 'subtle', 'depth3d'];
@@ -328,6 +328,7 @@ export function validateCV(cv) {
   if (cv.styles?.fontSize === 'lg') budget *= 0.82;
   else if (cv.styles?.fontSize === 'md') budget *= 0.92;
   else if (cv.styles?.fontSize === 'xs') budget *= 1.08;
+  else if (cv.styles?.fontSize === 'xxs') budget *= 1.18;
   if (cv.styles?.density === 'loose') budget *= 0.88;
   else if (cv.styles?.density === 'compact') budget *= 1.06;
   budget = Math.round(budget);

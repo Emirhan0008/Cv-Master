@@ -92,7 +92,7 @@ export interface CCStyles {
   textColor: string;
   backgroundColor: string;
   font: 'inter' | 'spaceGrotesk' | 'playfair' | 'jetbrains';
-  fontSize: 'xs' | 'sm' | 'md' | 'lg';
+  fontSize: 'xxs' | 'xs' | 'sm' | 'md' | 'lg';
   lineHeight: 'tight' | 'normal' | 'relaxed';
   density: 'compact' | 'comfortable' | 'loose'; // space and margins
   shadowIntensity: 'none' | 'subtle' | 'depth3d';

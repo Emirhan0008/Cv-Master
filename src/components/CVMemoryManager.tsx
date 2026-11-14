@@ -41,6 +41,7 @@ export interface CVMemoryManagerProps {
   onExportAllCVs: () => void;
   onImportBackup: (rawJson: string) => void;
   onResetSamples: () => void;
+  onCleanupMemory?: () => void;
   triggerAlert?: (type: 'success' | 'info' | 'error', text: string) => void;
   isModal?: boolean;
   onClose?: () => void;
@@ -60,6 +61,7 @@ export const CVMemoryManager: React.FC<CVMemoryManagerProps> = ({
   onExportAllCVs,
   onImportBackup,
   onResetSamples,
+  onCleanupMemory,
   triggerAlert,
   isModal = false,
   onClose
@@ -681,6 +683,19 @@ export const CVMemoryManager: React.FC<CVMemoryManagerProps> = ({
           })
         )}
       </div>
+
+      {/* Tek tıkla temizlik — gizli çekmecede değil, listenin hemen altında */}
+      {onCleanupMemory && (
+        <button
+          type="button"
+          onClick={onCleanupMemory}
+          className="w-full cursor-pointer py-2 px-3 bg-[#1C2027] hover:bg-[#252A34] text-sky-300 border border-sky-500/20 hover:border-sky-500/40 rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+          title="Hazır örnekleri ve birebir aynı içerikli kopyaları siler, her içerikten en güncel kaydı bırakır"
+        >
+          <Layers className="w-3.5 h-3.5" />
+          <span>Belleği Sadeleştir (örnekler + kopyalar)</span>
+        </button>
+      )}
 
       {/* 5. ADVANCED TOOLS & MAINTENANCE DRAWER */}
       <div className="border border-[#2D3139] rounded-xl bg-[#111317] overflow-hidden">

@@ -647,6 +647,53 @@ export default function App() {
   };
 
   // Import dynamic custom JSON backups
+  // Bellek sadeleştirme: hazır örnekleri ve birebir aynı içerikli kopyaları
+  // siler; her içerikten yalnız en güncel kaydı bırakır.
+  const handleCleanupMemory = () => {
+    setSavedCVs((prevList) => {
+      const fingerprint = (x: { personalInfo?: { name?: string; summary?: string }; workExperiences?: unknown[]; projects?: unknown[]; educations?: unknown[]; skills?: unknown[] }) =>
+        [
+          x.personalInfo?.name || '',
+          x.personalInfo?.summary || '',
+          JSON.stringify(x.workExperiences || []),
+          JSON.stringify(x.educations || []),
+          JSON.stringify(x.projects || []),
+          JSON.stringify(x.skills || []),
+        ].join('|');
+
+      // örnek olmayanlar + içeriğe göre tekilleştirme (en yeni kazanır)
+      const seen = new Map<string, (typeof prevList)[number]>();
+      const kept: (typeof prevList)[number][] = [];
+      for (const item of prevList) {
+        if (item.id.startsWith('sample-')) continue;
+        const key = fingerprint(item as never);
+        const existing = seen.get(key);
+        if (!existing) {
+          seen.set(key, item);
+          kept.push(item);
+          continue;
+        }
+        // aynı içerik: updatedAt daha yeni olanı tut
+        const keepNewer = new Date(item.updatedAt || 0) > new Date(existing.updatedAt || 0);
+        if (keepNewer) {
+          const idx = kept.indexOf(existing);
+          if (idx >= 0) kept[idx] = item;
+          seen.set(key, item);
+        }
+      }
+
+      const removed = prevList.length - kept.length;
+      localStorage.setItem('cv_builder_saved_cvs', JSON.stringify(kept));
+      triggerAlert(
+        'success',
+        removed > 0
+          ? `Bellek sadeleştirildi: ${removed} kayıt çıkarıldı, ${kept.length} kayıt kaldı.`
+          : 'Bellekte temizlenecek kayıt yok.'
+      );
+      return kept;
+    });
+  };
+
   const handleImportBackup = (rawJson: string) => {
     try {
       const parsed = JSON.parse(rawJson);
@@ -928,6 +975,182 @@ export default function App() {
 
       // Restore images
       restoreImages();
+    }
+  };
+
+  // ---- Vektör (foreignObject) yakalama ----
+  // html2canvas klon iframe'inde web fontlar yüklenmediği için satır metrikleri
+  // kayıyor ve yazılar üst üste biniyordu. Bu yol çizimi tarayıcının kendi
+  // motoruna yaptırır: ekranda ne görünüyorsa birebir o çıkar.
+  const embeddedFontCssRef = useRef<string | null>(null);
+
+  const getEmbeddedFontCss = async (): Promise<string> => {
+    if (embeddedFontCssRef.current) return embeddedFontCssRef.current;
+    const url =
+      'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700' +
+      '&family=Space+Grotesk:wght@300;400;500;600;700' +
+      '&family=Playfair+Display:wght@400;600;700' +
+      '&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap';
+    const css = await (
+      await fetch(url, {
+        headers: {
+          // woff2 döndürmesi için modern tarayıcı kimliği şart
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
+        },
+      })
+    ).text();
+
+    const urls = Array.from(new Set(Array.from(css.matchAll(/url\((https:\/\/[^)]+\.woff2)\)/g)).map((m) => m[1])));
+    const map = new Map<string, string>();
+    await Promise.all(
+      urls.map(async (u) => {
+        try {
+          const buf = new Uint8Array(await (await fetch(u)).arrayBuffer());
+          let bin = '';
+          const CH = 0x8000;
+          for (let i = 0; i < buf.length; i += CH) {
+            const slice = buf.subarray(i, i + CH);
+            let part = '';
+            for (let j = 0; j < slice.length; j++) part += String.fromCharCode(slice[j]);
+            bin += part;
+          }
+          map.set(u, `data:font/woff2;base64,${btoa(bin)}`);
+        } catch {
+          /* tek font düşerse devam */
+        }
+      })
+    );
+
+    let out = css;
+    for (const [u, dataUrl] of map) out = out.split(u).join(dataUrl);
+    embeddedFontCssRef.current = out;
+    return out;
+  };
+
+  const collectDocumentCss = async (): Promise<string> => {
+    const chunks: string[] = [];
+    // @font-face kuralları dış URL taşıyorsa canvas'ı "tainted" yapar; fontlar
+    // ayrıca gömülü (base64) CSS ile verildiği için buradakiler atlanır.
+    const isFontFace = (rule: CSSRule): boolean => {
+      const anyRule = rule as unknown as { type: number; constructor?: { name?: string } };
+      return anyRule.type === 5 || /fontface/i.test(anyRule.constructor?.name || '');
+    };
+    for (const sheet of Array.from(document.styleSheets)) {
+      try {
+        chunks.push(
+          Array.from(sheet.cssRules)
+            .filter((r) => !isFontFace(r))
+            .map((r) => r.cssText)
+            .join('\n')
+        );
+      } catch {
+        const href = (sheet as CSSStyleSheet).href;
+        if (href) {
+          try {
+            const text = await (await fetch(href)).text();
+            chunks.push(text.replace(/@font-face\s*\{[^}]*\}/gi, ''));
+          } catch {
+            /* atla */
+          }
+        }
+      }
+    }
+    return chunks.join('\n');
+  };
+
+  const captureCVToCanvasVector = async (sourceElement: HTMLElement): Promise<HTMLCanvasElement> => {
+    const restoreImages = await inlineImagesForCapture(sourceElement);
+
+    // Editör yardımcılarını çizimden çıkar
+    const touched: Array<{ el: HTMLElement; outline: string; boxShadow: string; bg: string }> = [];
+    sourceElement.querySelectorAll<HTMLElement>('[data-editable="true"], [contenteditable]').forEach((el) => {
+      touched.push({ el, outline: el.style.outline, boxShadow: el.style.boxShadow, bg: el.style.background });
+      el.style.outline = 'none';
+      el.style.boxShadow = 'none';
+      el.style.background = 'transparent';
+    });
+
+    try {
+      const [docCss, fontCss] = await Promise.all([collectDocumentCss(), getEmbeddedFontCss()]);
+
+      const clone = sourceElement.cloneNode(true) as HTMLElement;
+      clone.removeAttribute('id');
+      clone.querySelectorAll<HTMLElement>('[contenteditable]').forEach((el) => el.removeAttribute('contenteditable'));
+      Object.assign(clone.style, {
+        width: '794px',
+        minWidth: '794px',
+        maxWidth: '794px',
+        height: 'auto',
+        margin: '0',
+        overflow: 'visible',
+        boxShadow: 'none',
+        border: 'none',
+        transform: 'none',
+        pageBreakInside: 'avoid',
+      });
+
+      const width = 794;
+      const height = Math.max(1123, Math.ceil(sourceElement.getBoundingClientRect().height));
+
+      const wrapper = document.createElement('div');
+      wrapper.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+      Object.assign(wrapper.style, {
+        width: `${width}px`,
+        height: `${height}px`,
+        background: '#ffffff',
+        margin: '0',
+        padding: '0',
+      });
+
+      const styleEl = document.createElement('style');
+      styleEl.textContent = `${fontCss}\n${docCss}`;
+      wrapper.appendChild(styleEl);
+      wrapper.appendChild(clone);
+
+      const xhtml = new XMLSerializer().serializeToString(wrapper);
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+        `<foreignObject x="0" y="0" width="${width}" height="${height}">${xhtml}</foreignObject></svg>`;
+
+      // Blob URL ile yüklenen foreignObject SVG canvas'ı "tainted" yapıyor
+      // (Chrome kısıtı). data: URL ile aynı SVG sorunsuz çiziliyor.
+      const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      const img = new window.Image();
+      img.decoding = 'sync';
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('SVG render edilemedi'));
+        img.src = svgUrl;
+      });
+
+      const scale = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas bağlamı alınamadı');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    } finally {
+      touched.forEach(({ el, outline, boxShadow, bg }) => {
+        el.style.outline = outline;
+        el.style.boxShadow = boxShadow;
+        el.style.background = bg;
+      });
+      restoreImages();
+    }
+  };
+
+  // Görsel çıktı: önce vektör yol, olmazsa html2canvas'a düş
+  const captureCVForImage = async (element: HTMLElement): Promise<HTMLCanvasElement> => {
+    try {
+      return await captureCVToCanvasVector(element);
+    } catch (err) {
+      console.warn('Vektör yakalama başarısız, html2canvas denenecek:', err);
+      return await captureCVToCanvas(element);
     }
   };
 
@@ -1338,7 +1561,7 @@ ${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
     setShowPdfModal(true);
   };
 
-  // High Quality PNG Image Export using html2canvas
+  // High Quality PNG Image Export — tarayıcı motoruyla birebir (vektör) çizim
   const triggerImageExport = async () => {
     triggerAlert('info', 'Yüksek çözünürlüklü özgeçmiş görseli (PNG) oluşturuluyor, lütfen bekleyin...');
     try {
@@ -1348,7 +1571,7 @@ ${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
         return;
       }
 
-      const canvas = await captureCVToCanvas(element);
+      const canvas = await captureCVForImage(element);
       const imgData = canvas.toDataURL('image/png');
       const rawName = cvData.personalInfo?.name || 'ozgecmis';
       const cleanName = rawName.toLowerCase().replace(/[^a-z0-9ğüşıöç]/gi, '-').replace(/-+/g, '-');
@@ -1781,6 +2004,7 @@ ${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
               onExportSingleCV={handleExportSingleCV}
               onExportAllCVs={handleExportAllCVs}
               onResetSamples={handleResetSamples}
+              onCleanupMemory={handleCleanupMemory}
               onOpenMemoryModal={() => setShowMemoryModal(true)}
             />
           </aside>
@@ -1862,6 +2086,7 @@ ${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
               onExportSingleCV={handleExportSingleCV}
               onExportAllCVs={handleExportAllCVs}
               onResetSamples={handleResetSamples}
+              onCleanupMemory={handleCleanupMemory}
               onOpenMemoryModal={() => setShowMemoryModal(true)}
             />
           </aside>
@@ -1932,6 +2157,7 @@ ${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
                 onExportSingleCV={handleExportSingleCV}
                 onExportAllCVs={handleExportAllCVs}
                 onResetSamples={handleResetSamples}
+                onCleanupMemory={handleCleanupMemory}
                 onOpenMemoryModal={() => setShowMemoryModal(true)}
               />
             </div>
@@ -2167,6 +2393,7 @@ ${inlineCss.map((c) => `<style>${c}</style>`).join('\n')}
               onExportAllCVs={handleExportAllCVs}
               onImportBackup={handleImportBackup}
               onResetSamples={handleResetSamples}
+              onCleanupMemory={handleCleanupMemory}
               triggerAlert={triggerAlert}
               isModal={true}
               onClose={() => setShowMemoryModal(false)}

@@ -429,6 +429,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
 
   // Font size mapping
   const fontSizeClass = {
+    xxs: 'text-[10px]',
     xs: 'text-xs',
     sm: 'text-sm',
     md: 'text-base',
@@ -437,6 +438,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
 
   // Dynamic scaling for hardcoded small body texts (like work descriptions and contact notes) to avoid single page spillover
   const textXsClass = {
+    xxs: 'text-[9px]',
     xs: 'text-[10px]',
     sm: 'text-[11.5px]',
     md: 'text-xs',

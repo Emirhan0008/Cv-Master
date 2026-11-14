@@ -33,6 +33,7 @@ interface CVFormProps {
   onExportSingleCV?: (id: string) => void;
   onExportAllCVs?: () => void;
   onResetSamples?: () => void;
+  onCleanupMemory?: () => void;
   onOpenMemoryModal?: () => void;
 }
 
@@ -136,6 +137,7 @@ export default function CVForm({
   onExportSingleCV,
   onExportAllCVs,
   onResetSamples,
+  onCleanupMemory,
   onOpenMemoryModal,
 }: CVFormProps) {
   const [activeTab, setActiveTab] = useState<'personal' | 'experience' | 'education' | 'skills' | 'projects' | 'custom' | 'reorder' | 'design' | 'saved' | 'presets'>(
@@ -2627,10 +2629,11 @@ export default function CVForm({
                 <div className="flex items-center justify-between p-2 bg-[#0F1115] border border-[#2D3139] rounded-lg">
                   <span className="font-semibold text-gray-300">Yazı Boyutu:</span>
                   <div className="flex items-center gap-0.5 bg-[#16191E] p-0.5 rounded border border-[#2D3139]">
-                    {(['xs', 'sm', 'md', 'lg'] as const).map((sz) => (
+                    {(['xxs', 'xs', 'sm', 'md', 'lg'] as const).map((sz) => (
                       <button
                         key={sz}
                         onClick={() => updateStyles('fontSize', sz)}
+                        title={sz === 'xxs' ? 'Çok küçük (sığmayan CV için)' : sz}
                         className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase transition ${
                           cvData.styles.fontSize === sz
                             ? 'bg-[#1A1D23] text-teal-400 shadow-xs'
@@ -2852,6 +2855,7 @@ export default function CVForm({
                 onExportAllCVs={onExportAllCVs || (() => {})}
                 onImportBackup={onImportBackup}
                 onResetSamples={onResetSamples || (() => {})}
+                onCleanupMemory={onCleanupMemory}
                 triggerAlert={triggerAlert}
                 isModal={false}
               />
