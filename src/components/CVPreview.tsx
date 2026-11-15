@@ -18,6 +18,8 @@ import {
   Settings,
   Box,
   MapPin,
+  MapPinned,
+  Car,
   Calendar,
   Layers,
   Cpu,
@@ -224,6 +226,14 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
   const [containerWidth, setContainerWidth] = useState(794);
   const [previewHeight, setPreviewHeight] = useState(1123);
 
+  // A4 sayfa sınırı çizgisinin konumu.
+  // `top-[297mm]` sabit değeri dış kapsayıcının üst dolgusu (pt-12/14) ve
+  // zoom `scale()` dönüşümü yüzünden gerçek sayfa bitişinin 48-56px altında
+  // kalıyordu. Bu yüzden çizgi, sayfa elementinin GERÇEK alt kenarı ölçülerek
+  // konumlandırılır: `pageRect.bottom - wrapperRect.top` hem ölçeği hem
+  // dolguyu kendiliğinden içerir.
+  const [pageGuideTop, setPageGuideTop] = useState<string | null>(null);
+
   /* ---------------------------------------------------------------- */
   /* A4 otomatik sığdırma (auto-fit)                                  */
   /* ---------------------------------------------------------------- */
@@ -359,6 +369,53 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
       return () => clearTimeout(timer);
     }
   }, [cvData, containerWidth, zoomScale, fit]);
+
+  // A4 sayfa sınırı çizgisini gerçek sayfa altına oturt (ölçüm tabanlı).
+  // Sabit `top-[297mm]` yerine sayfanın gerçek alt kenarı ölçülür; böylece
+  // dış kapsayıcının üst dolgusu ve zoom `scale()` kendiliğinden hesaba girer.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+
+    // Bileşen iki kez monte ediliyor (masaüstü + mobil): önce kendi
+    // örneğimiz, sonra kapsayıcı içi, en son `getElementById` denenir.
+    const resolvePage = (): HTMLElement | null =>
+      (containerRef.current as HTMLElement | null) ||
+      (wrapper.querySelector('#cv-preview-page') as HTMLElement | null) ||
+      (document.getElementById('cv-preview-page') as HTMLElement | null);
+
+    const measure = () => {
+      const page = resolvePage();
+      if (!page || !wrapper) return;
+      const pageRect = page.getBoundingClientRect();
+      const wrapperRect = wrapper.getBoundingClientRect();
+      const top = Math.round(pageRect.bottom - wrapperRect.top);
+      if (Number.isFinite(top) && top > 0) setPageGuideTop(`${top}px`);
+    };
+
+    measure();
+    // Ölçek, dolgu ve auto-fit aynı karede oturmuyor: bir sonraki karede
+    // (ve bir kare sonrasında) yeniden ölç.
+    const raf = requestAnimationFrame(measure);
+    const raf2 = requestAnimationFrame(() => requestAnimationFrame(measure));
+
+    let observer: ResizeObserver | undefined;
+    const page = resolvePage();
+    if (page && typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => measure());
+      observer.observe(page);
+    }
+    window.addEventListener('resize', measure);
+    document.fonts?.ready.then(() => measure()).catch(() => {});
+
+    return () => {
+      cancelAnimationFrame(raf);
+      cancelAnimationFrame(raf2);
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [styles.template, styles.density, styles.fontSize, styles.lineHeight, zoomScale, cvData, fit, containerWidth]);
 
   // Auto-scale ratio for mobile devices to keep uncompromised A4 proportions without content squishing
   const autoScale = (mobileFit && containerWidth < 794) ? containerWidth / 794 : 1.0;
@@ -1546,7 +1603,10 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
     >
       {/* Dynamic Overlay A4 Page Break Guide */}
       {styles.pageGuide && (
-        <div className="absolute left-0 right-0 top-[297mm] h-[2px] pointer-events-none border-t border-dashed border-rose-400 flex items-center justify-end z-55 mr-4 select-none no-print">
+        <div
+          className="absolute left-0 right-0 h-[2px] pointer-events-none border-t border-dashed border-rose-400 flex items-center justify-end z-55 mr-4 select-none no-print"
+          style={{ top: pageGuideTop ?? '297mm' }}
+        >
           <span className="bg-rose-500 text-white text-[9px] font-bold py-0.5 px-2 rounded-full uppercase tracking-wider relative -top-3 shadow shadow-rose-400">
             A4 Sayfa Sınırı (Sayfa 1 Bitişi)
           </span>
@@ -2279,7 +2339,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                     <img
                       src={personalInfo.avatarUrl}
                       alt={personalInfo.name}
-                      className={`rounded-full object-cover border-[4px] border-white shadow-lg relative z-10 ${styles.density === 'compact' ? 'w-22 h-22' : 'w-30 h-30'}`}
+                      className={`rounded-full object-cover border-[4px] border-white shadow-lg relative z-10 ${styles.density === 'compact' ? 'w-26 h-26' : 'w-34 h-34'}`}
                       referrerPolicy="no-referrer"
                       crossOrigin="anonymous"
                     />
@@ -2299,25 +2359,25 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                 <div className="space-y-3 text-[10.5px] text-white/95">
                   {personalInfo.phone && (
                     <div className="flex items-start gap-2">
-                      <span className="text-[10px] font-bold text-amber-400 shrink-0 select-none">T:</span>
+                      <Phone className="w-3 h-3 text-amber-400 shrink-0 select-none mt-[1px]" />
                       <Editable path={['personalInfo', 'phone']} text={personalInfo.phone} className="font-semibold" />
                     </div>
                   )}
                   {personalInfo.email && (
                     <div className="flex items-start gap-2">
-                      <span className="text-[10px] font-bold text-amber-400 shrink-0 select-none">@:</span>
+                      <Mail className="w-3 h-3 text-amber-400 shrink-0 select-none mt-[1px]" />
                       <Editable path={['personalInfo', 'email']} text={personalInfo.email} className="font-semibold break-all" />
                     </div>
                   )}
                   {personalInfo.location && (
                     <div className="flex items-start gap-2">
-                      <span className="text-[10px] font-bold text-amber-400 shrink-0 select-none">A:</span>
+                      <MapPin className="w-3 h-3 text-amber-400 shrink-0 select-none mt-[1px]" />
                       <Editable path={['personalInfo', 'location']} text={personalInfo.location} className="font-semibold" />
                     </div>
                   )}
                   {personalInfo.birthDate && (
                     <div className="flex items-start gap-2">
-                      <span className="text-[10px] font-bold text-amber-400 shrink-0 select-none">D:</span>
+                      <Calendar className="w-3 h-3 text-amber-400 shrink-0 select-none mt-[1px]" />
                       <div className="flex flex-col">
                         <span className="text-[8px] uppercase text-white/40 font-bold">Doğum Tarihi</span>
                         <Editable path={['personalInfo', 'birthDate']} text={personalInfo.birthDate} className="font-semibold" />
@@ -2326,7 +2386,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   )}
                   {personalInfo.birthPlace && (
                     <div className="flex items-start gap-2">
-                      <span className="text-[10px] font-bold text-amber-400 shrink-0 select-none">Y:</span>
+                      <MapPinned className="w-3 h-3 text-amber-400 shrink-0 select-none mt-[1px]" />
                       <div className="flex flex-col">
                         <span className="text-[8px] uppercase text-white/40 font-bold">Doğum Yeri</span>
                         <Editable path={['personalInfo', 'birthPlace']} text={personalInfo.birthPlace} className="font-semibold" />
@@ -2335,7 +2395,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   )}
                   {personalInfo.maritalStatus && (
                     <div className="flex items-start gap-2">
-                      <span className="text-[10px] font-bold text-amber-400 shrink-0 select-none">M:</span>
+                      <Heart className="w-3 h-3 text-amber-400 shrink-0 select-none mt-[1px]" />
                       <div className="flex flex-col">
                         <span className="text-[8px] uppercase text-white/40 font-bold">Medeni Durum</span>
                         <Editable path={['personalInfo', 'maritalStatus']} text={personalInfo.maritalStatus} className="font-semibold" />
@@ -2344,7 +2404,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   )}
                   {personalInfo.driverLicense && (
                     <div className="flex items-start gap-2">
-                      <span className="text-[10px] font-bold text-amber-400 shrink-0 select-none">E:</span>
+                      <Car className="w-3 h-3 text-amber-400 shrink-0 select-none mt-[1px]" />
                       <div className="flex flex-col">
                         <span className="text-[8px] uppercase text-white/40 font-bold">Ehliyet</span>
                         <Editable path={['personalInfo', 'driverLicense']} text={personalInfo.driverLicense} className="font-semibold" />
@@ -2353,7 +2413,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   )}
                   {personalInfo.website && (
                     <div className="flex items-start gap-2">
-                      <span className="text-[10px] font-bold text-amber-400 shrink-0 select-none">W:</span>
+                      <Globe className="w-3 h-3 text-amber-400 shrink-0 select-none mt-[1px]" />
                       <div className="flex flex-col">
                         <span className="text-[8px] uppercase text-white/40 font-bold">Websitesi</span>
                         <span className="underline font-semibold break-all text-amber-300">
