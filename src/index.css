@@ -13,6 +13,17 @@
   margin: 0;
 }
 
+/*
+  Tailwind v4 `rounded-full` = `border-radius: calc(infinity * 1px)`.
+  Chromium bu değeri PDF'e basarken ve <foreignObject> çizerken çözemiyor,
+  köşeler kare kalıyordu (yuvarlak profil fotoğrafı kare çıkıyordu).
+  A4 sayfasında hiçbir öğe 9999px'ten büyük olmadığı için somut değer
+  görsel olarak birebir aynı sonucu verir ve her motorda çalışır.
+*/
+.rounded-full {
+  border-radius: 9999px;
+}
+
 @media print {
   html, body {
     margin: 0 !important;
@@ -98,13 +109,23 @@
     print-color-adjust: exact !important;
   }
 
-  /* Fotoğraf (base64 data URL) print modunda düzgün render olsun */
+  /* Fotoğraf (base64 data URL) print modunda düzgün render olsun.
+     NOT: Yalnız `rounded-full` olan fotoğraflara dokunulur — şablonun kendi
+     köşe yarıçapı (rounded-xl / rounded-2xl) korunur. Eskiden burada koşulsuz
+     `border-radius: 50% !important` vardı ve köşeli tasarımları da daire
+     yapıyordu. Ayrıca `50%` yüzde değeri Chromium'un PDF yolunda yanlış
+     çözülüyordu; somut piksel + circle clip her motorda aynı sonucu verir. */
   #cv-preview-page img[src^="data:"] {
     display: block !important;
-    border-radius: 50% !important;
     object-fit: cover !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+
+  #cv-preview-page img.rounded-full {
+    border-radius: 9999px !important;
+    clip-path: circle(50%) !important;
+    -webkit-clip-path: circle(50%) !important;
   }
 
   /* Ensure items avoid awkward page breaks across pages */
