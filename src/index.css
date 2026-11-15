@@ -114,7 +114,7 @@
      köşe yarıçapı (rounded-xl / rounded-2xl) korunur. Eskiden burada koşulsuz
      `border-radius: 50% !important` vardı ve köşeli tasarımları da daire
      yapıyordu. Ayrıca `50%` yüzde değeri Chromium'un PDF yolunda yanlış
-     çözülüyordu; somut piksel + circle clip her motorda aynı sonucu verir. */
+     çözülüyordu; somut piksel değeri her motorda aynı sonucu verir. */
   #cv-preview-page img[src^="data:"] {
     display: block !important;
     object-fit: cover !important;
@@ -122,10 +122,16 @@
     print-color-adjust: exact !important;
   }
 
+  /* `clip-path: circle(50%)` KULLANILMAZ: Chromium yüzdeyi padding box'a
+     göre çözdüğü için tam olarak kenarlığın genişliği (4px beyaz halka)
+     kırpılıyordu — ekranda halka görünüyor, PDF/print'te kayboluyordu.
+     `overflow: hidden` ise border-radius'u boyama anında uygulatır: içerik
+     yuvarlak kırpılır ama kenarlık korunur → ekran ve PDF birebir aynı.
+     (Yalnız `border-radius` print'te replaced elementi hiç kırpmıyordu:
+     fotoğraf kare çıkıyordu.) */
   #cv-preview-page img.rounded-full {
     border-radius: 9999px !important;
-    clip-path: circle(50%) !important;
-    -webkit-clip-path: circle(50%) !important;
+    overflow: hidden !important;
   }
 
   /* Ensure items avoid awkward page breaks across pages */
