@@ -1077,6 +1077,34 @@ export default function App() {
       const clone = sourceElement.cloneNode(true) as HTMLElement;
       clone.removeAttribute('id');
       clone.querySelectorAll<HTMLElement>('[contenteditable]').forEach((el) => el.removeAttribute('contenteditable'));
+
+      // Tailwind v4 `rounded-full` → `border-radius: calc(infinity * 1px)`.
+      // foreignObject rasterize ederken bu değeri çözemiyor ve köşeler kare
+      // kalıyordu (yuvarlak profil fotoğrafı kare çıkıyordu). Aynı görünümü
+      // veren somut bir piksel değeriyle değiştir.
+      const fixBorderRadius = (src: Element, dst: Element) => {
+        const srcNodes = [src, ...Array.from(src.querySelectorAll('*'))];
+        const dstNodes = [dst, ...Array.from(dst.querySelectorAll('*'))];
+        for (let i = 0; i < srcNodes.length && i < dstNodes.length; i++) {
+          const srcEl = srcNodes[i] as HTMLElement;
+          const dstEl = dstNodes[i] as HTMLElement;
+          // Yalnız `rounded-full` benzeri sınıflar bu sorunu üretir; diğer
+          // yüzlerce öğe için getComputedStyle çağırmaya gerek yok.
+          const cls = `${srcEl.className || ''}`;
+          if (!srcEl.getAttribute('style')?.includes('border-radius') && !/rounded-(full|3xl|2xl)/.test(cls)) {
+            continue;
+          }
+          const nums = window.getComputedStyle(srcEl).borderRadius.match(/[\d.e+-]+/g);
+          if (!nums || !nums.some((n) => Number(n) > 5000)) continue;
+          const rect = srcEl.getBoundingClientRect();
+          const shorter = Math.min(rect.width, rect.height);
+          if (!shorter) continue;
+          // Kısa kenarın yarısı: dairede tam daire, hap (pill) biçiminde doğru
+          dstEl.style.borderRadius = `${Math.max(4, Math.ceil(shorter / 2))}px`;
+        }
+      };
+      fixBorderRadius(sourceElement, clone);
+
       Object.assign(clone.style, {
         width: '794px',
         minWidth: '794px',
