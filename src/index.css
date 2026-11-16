@@ -6,6 +6,12 @@
   --font-space-grotesk: "Space Grotesk", sans-serif;
   --font-playfair: "Playfair Display", serif;
   --font-jetbrains: "JetBrains Mono", monospace;
+  /* Tailwind'in amber paletinde 550 yok (yalnız 50–500–600–950...).
+     `border-amber-550` bu yüzden hiç üretilmiyordu ve kenarlık rengi
+     `currentColor`'a düşüyordu: modern-geometric'te koyu lacivert şeridin
+     sol kenarı ve PROFİL başlığının sol çubuğu BEYAZ çıkıyordu.
+     500 ile 600 arasında ara ton tanımı burada. */
+  --color-amber-550: #f0a020;
 }
 
 @page {
@@ -118,6 +124,11 @@
   #cv-preview-page img[src^="data:"] {
     display: block !important;
     object-fit: cover !important;
+    /* Replaced element (img) print/PDF yolunda border-radius'u BOYAMIYOR:
+       içerik köşelerin dışına taşıyor, yuvarlak/köşeli yarıçap kare çıkıyordu
+       (modern rounded-xl, depth3d rounded-2xl). `overflow: hidden` kırpmayı
+       boyama anında zorunlu kılar → ekran ve çıktı birebir. */
+    overflow: hidden !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }

@@ -249,6 +249,8 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
   const [fit, setFit] = useState<{ scale: number; minHeightPx: number | null }>({ scale: 1, minHeightPx: null });
   const fitRefState = useRef(fit);
   fitRefState.current = fit;
+  // Ölçek en az bir kez hesaplandı mı? (bkz. run() içindeki baskı koruması)
+  const fitComputed = useRef(false);
 
   const A4_HEIGHT_PX = (297 / 25.4) * 96;
   // Okunabilirlik tabanı: bundan fazla küçültme yazıyı okunamaz yapar.
@@ -261,6 +263,13 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
 
     const run = () => {
       if (cancelled) return;
+      // BASKIDA YENİDEN HESAPLAMA YOK. Ekran ile PDF'in birebir aynı olması
+      // için ölçek bir kez (ekran medyasında) hesaplanır ve baskı onu aynen
+      // kullanır. Önceden `matchMedia('print')` değişiminde fit yeniden
+      // hesaplanıyordu; iki medyada doğal yükseklik 0,5px farklı çıktığı için
+      // ölçek kayıyordu (crimson-split ekran 0,8848 · print 0,8891) ve aynı CV
+      // iki farklı boyutta görünüyordu.
+      if (fitComputed.current && typeof window !== 'undefined' && window.matchMedia('print').matches) return;
       // `document.getElementById` DEĞİL: bileşen iki kez monte ediliyor
       // (masaüstü + mobil). getElementById her zaman ilk —gizli— kopyayı
       // döndürüyor, mobilde yükseklik 0 ölçülüp önizleme boş görünüyordu.
@@ -288,31 +297,65 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
         inner.style.minHeight = withMinHeight && z < 1 ? `${Math.round(availH / z)}px` : '';
       };
 
-      let lo = MIN_FIT_SCALE;
-      let hi = 1;
       // 1.0 zaten sığıyorsa hiç küçültme.
       apply(1);
-      if (inner.getBoundingClientRect().height <= availH + 1) {
+      const naturalH = inner.getBoundingClientRect().height;
+      if (naturalH <= availH + 1) {
+        fitComputed.current = true;
         const prev = fitRefState.current;
         if (prev.scale !== 1 || prev.minHeightPx !== null) setFit({ scale: 1, minHeightPx: null });
         return;
       }
 
-      let best = MIN_FIT_SCALE;
-      for (let i = 0; i < 7; i++) {
-        const mid = +((lo + hi) / 2).toFixed(3);
-        apply(mid);
-        const h = inner.getBoundingClientRect().height;
-        if (h <= availH + 1) {
-          best = mid;
-          lo = mid;
-        } else {
-          hi = mid;
-        }
+      /* Ölçek hesabı — DETERMİNİSTİK (sabit adım sayısı, aynı girdi→aynı sonuç).
+         `zoom` yerleşim genişliğini telafi ettiği için (946px yerleşim × 0.8)
+         ölçek küçüldükçe metne daha çok yer açılır; yükseklik(ölçek) bu yüzden
+         doğrusal değil ve sınırsız ikili arama her yüklemede başka bir değer
+         buluyordu (crimson-split 0.893 → 0.907 → 0.913) → canlı önizleme ile
+         PDF farklı ölçekte çıkıyordu. Burada adım sayısı SABİT. */
+      // Ölçüm MUTLAKA minHeight'siz yapılır: minHeight uygulanmışken kutu kendi
+      // hedef yüksekliğine sabitlenir ve ölçüm her zaman "sığdı" der.
+      const measureAt = (z: number) => {
+        apply(z, false);
+        return inner.getBoundingClientRect().height;
+      };
+
+      let lo = Math.max(MIN_FIT_SCALE, Math.min(1, availH / naturalH)); // sığan alt sınır
+      let loH = measureAt(lo);
+      if (loH > availH + 1) {
+        // Beklenmedik: oran bile taşıyor (yerleşim değişti) → oranla küçült.
+        lo = Math.max(MIN_FIT_SCALE, +(lo * (availH / loH)).toFixed(4));
+        loH = measureAt(lo);
       }
 
+      let hi: number | null = null;
+      // 1) Sığdığı sürece büyüt (en fazla 3 adım).
+      for (let i = 0; i < 3 && loH < availH - 2 && lo < 1; i++) {
+        const next = Math.max(MIN_FIT_SCALE, Math.min(1, +(lo * (availH / loH)).toFixed(4)));
+        if (next <= lo + 0.001) break;
+        const h = measureAt(next);
+        if (h > availH + 1) { hi = next; break; }
+        lo = next;
+        loH = h;
+      }
+
+      // 2) Taşan üst sınır varsa arada SABİT 3 adım (sayfayı doldur).
+      if (hi !== null) {
+        let a = lo;
+        let b = hi;
+        for (let i = 0; i < 3; i++) {
+          const mid = +((a + b) / 2).toFixed(4);
+          const h = measureAt(mid);
+          if (h > availH + 1) b = mid;
+          else { a = mid; loH = h; }
+        }
+        lo = a;
+      }
+
+      const best = lo;
       const minHeightPx = best < 1 ? Math.round(availH / best) : null;
       apply(best, true);
+      fitComputed.current = true;
       const prev = fitRefState.current;
       if (Math.abs(best - prev.scale) > 0.002 || minHeightPx !== prev.minHeightPx) {
         setFit({ scale: best, minHeightPx });
@@ -327,16 +370,19 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
 
     schedule();
     if (document.fonts?.ready) document.fonts.ready.then(schedule).catch(() => {});
+    // Yerleşim geç oturuyor: fontlar hazır olduktan sonra profil fotoğrafının
+    // çözülmesi/ölçeklenmesi de yüksekliği değiştirir. Tek seferlik ölçüm
+    // içeriği 6px uzun görüp ölçeği erken küçültüyordu (crimson-split
+    // 0,8848 yerine 0,8891 olması gerekiyordu). Deterministik formül sayesinde
+    // bu tekrarlar aynı değere yakınsar, kararlı hale gelir.
+    const settleTimers = [setTimeout(run, 400), setTimeout(run, 1100), setTimeout(run, 2200)];
     const onResize = () => schedule();
     window.addEventListener('resize', onResize);
-    // Ekran ↔ baskı medyası geçişinde yükseklik değişir (PDF bu yolu kullanır).
-    const mq = window.matchMedia('print');
-    mq.addEventListener?.('change', schedule);
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      settleTimers.forEach(clearTimeout);
       window.removeEventListener('resize', onResize);
-      mq.removeEventListener?.('change', schedule);
     };
   }, [cvData, styles.template, styles.density, styles.fontSize, styles.lineHeight, containerWidth, zoomScale]);
 
@@ -987,6 +1033,17 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
     if (styles.template === 'minimalist-clean') {
       return (
         <div className="pb-3 border-b border-slate-200 flex justify-between items-start gap-4">
+          {personalInfo.photoVisible && personalInfo.avatarUrl && (
+            <div className="shrink-0 self-center">
+              <img
+                src={personalInfo.avatarUrl}
+                alt={personalInfo.name}
+                className={`rounded-full object-cover border-2 border-slate-200 ${styles.density === 'compact' ? 'w-16 h-16' : 'w-24 h-24'}`}
+                referrerPolicy="no-referrer"
+                crossOrigin="anonymous"
+              />
+            </div>
+          )}
           <div className="flex-1 text-center">
             <h1 className="text-2xl font-black tracking-widest text-slate-900 uppercase">
               <Editable path={['personalInfo', 'name']} text={personalInfo.name} />
@@ -1089,6 +1146,17 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
     if (styles.template === 'editorial-serif') {
       return (
         <div className="pb-4 border-b border-slate-300 flex justify-between items-start gap-4">
+          {personalInfo.photoVisible && personalInfo.avatarUrl && (
+            <div className="shrink-0 self-center">
+              <img
+                src={personalInfo.avatarUrl}
+                alt={personalInfo.name}
+                className={`rounded-full object-cover border border-slate-300 grayscale ${styles.density === 'compact' ? 'w-16 h-16' : 'w-24 h-24'}`}
+                referrerPolicy="no-referrer"
+                crossOrigin="anonymous"
+              />
+            </div>
+          )}
           <div className="flex-1 text-center">
             <h1 className="text-3xl font-serif font-black tracking-wide text-slate-900">
               <Editable path={['personalInfo', 'name']} text={personalInfo.name} />
@@ -1192,14 +1260,25 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
       return (
         <div className="border border-slate-200 bg-slate-50/50 p-4 rounded-lg font-mono">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
-            <div>
-              <div className="text-[10px] text-emerald-600 font-bold">/* USER PROFILE */</div>
-              <h1 className="text-lg font-bold tracking-tight text-slate-950">
-                {`[`}<Editable path={['personalInfo', 'name']} text={personalInfo.name} />{`]`}
-              </h1>
-              <p className="text-xs text-slate-500 font-medium mt-1">
-                {`// `}<Editable path={['personalInfo', 'title']} text={personalInfo.title} />
-              </p>
+            <div className="flex items-center gap-3">
+              {personalInfo.photoVisible && personalInfo.avatarUrl && (
+                <img
+                  src={personalInfo.avatarUrl}
+                  alt={personalInfo.name}
+                  className={`rounded object-cover border border-slate-300 shrink-0 ${styles.density === 'compact' ? 'w-14 h-14' : 'w-20 h-20'}`}
+                  referrerPolicy="no-referrer"
+                  crossOrigin="anonymous"
+                />
+              )}
+              <div>
+                <div className="text-[10px] text-emerald-600 font-bold">/* USER PROFILE */</div>
+                <h1 className="text-lg font-bold tracking-tight text-slate-950">
+                  {`[`}<Editable path={['personalInfo', 'name']} text={personalInfo.name} />{`]`}
+                </h1>
+                <p className="text-xs text-slate-500 font-medium mt-1">
+                  {`// `}<Editable path={['personalInfo', 'title']} text={personalInfo.title} />
+                </p>
+              </div>
             </div>
             {isHeaderQR && (
               <div className="bg-white p-1 rounded border border-slate-200">
@@ -1705,9 +1784,16 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
           style={{ 
             ...bgStyles, 
             ...is3DStyle,
-            width: '794px',
-            minWidth: '794px',
-            maxWidth: '794px',
+            /* Genişlik MUTLAKA 210mm — 794px DEĞİL.
+               Ölçüldü: 794px = 210.06mm, yani baskıdan 0.3px geniş. Yazı kutusu
+               ekranda 916px, print'te 915px oluyordu. Tam sınırda duran bir
+               paragraf (metin 915.3px) ekranda 1 satıra, PDF'te 2 satıra
+               kırılıyordu → aynı CV iki farklı düzende görünüyordu (depth3d
+               +14px, split-sidebar +17px). Ekran ve baskı aynı birimi
+               kullanırsa satır kırılmaları birebir aynı olur. */
+            width: '210mm',
+            minWidth: '210mm',
+            maxWidth: '210mm',
           }}
           className={`min-h-[297mm] origin-center flex flex-col justify-between align-stretch text-slate-800 ${fontClass} ${fontSizeClass} ${lineHeightClass} ${styles.shadowIntensity !== 'none' ? 'shadow-xl' : 'border border-slate-200 shadow-sm'} ${actualPaddingClass} tracking-normal print:shadow-none print:border-none print:w-[210mm] print:min-w-[210mm] print:max-w-[210mm] relative overflow-hidden`}
         >
@@ -1758,50 +1844,50 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                 {renderSidebarSectionHeader('KİŞİSEL / İLETİŞİM')}
                 <div className={`${styles.density === 'compact' ? 'space-y-1.5' : 'space-y-3'} text-[11px] text-white/90`}>
                   {personalInfo.phone && (
-                    <div className="flex flex-col">
-                      <span className="text-[9px] uppercase text-white/40 font-bold">Telefon</span>
+                    <div className="flex items-center gap-1.5">
+                      <Phone className="w-3 h-3 shrink-0 text-white/50" />
                       <Editable path={['personalInfo', 'phone']} text={personalInfo.phone} className="font-medium" />
                     </div>
                   )}
                   {personalInfo.email && (
-                    <div className="flex flex-col">
-                      <span className="text-[9px] uppercase text-white/40 font-bold">E-Posta</span>
+                    <div className="flex items-center gap-1.5">
+                      <Mail className="w-3 h-3 shrink-0 text-white/50" />
                       <Editable path={['personalInfo', 'email']} text={personalInfo.email} className="font-medium break-all" />
                     </div>
                   )}
                   {personalInfo.location && (
-                    <div className="flex flex-col">
-                      <span className="text-[9px] uppercase text-white/40 font-bold">Adres</span>
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="w-3 h-3 shrink-0 text-white/50" />
                       <Editable path={['personalInfo', 'location']} text={personalInfo.location} className="font-medium" />
                     </div>
                   )}
                   {personalInfo.birthDate && (
-                    <div className="flex flex-col">
-                      <span className="text-[9px] uppercase text-white/40 font-bold">Doğum Tarihi</span>
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="w-3 h-3 shrink-0 text-white/50" />
                       <Editable path={['personalInfo', 'birthDate']} text={personalInfo.birthDate} className="font-medium" />
                     </div>
                   )}
                   {personalInfo.birthPlace && (
-                    <div className="flex flex-col">
-                      <span className="text-[9px] uppercase text-white/40 font-bold">Doğum Yeri</span>
+                    <div className="flex items-center gap-1.5">
+                      <MapPinned className="w-3 h-3 shrink-0 text-white/50" />
                       <Editable path={['personalInfo', 'birthPlace']} text={personalInfo.birthPlace} className="font-medium" />
                     </div>
                   )}
                   {personalInfo.maritalStatus && (
-                    <div className="flex flex-col">
-                      <span className="text-[9px] uppercase text-white/40 font-bold">Medeni Durum</span>
+                    <div className="flex items-center gap-1.5">
+                      <Heart className="w-3 h-3 shrink-0 text-white/50" />
                       <Editable path={['personalInfo', 'maritalStatus']} text={personalInfo.maritalStatus} className="font-medium" />
                     </div>
                   )}
                   {personalInfo.driverLicense && (
-                    <div className="flex flex-col">
-                      <span className="text-[9px] uppercase text-white/40 font-bold">Ehliyet</span>
+                    <div className="flex items-center gap-1.5">
+                      <Car className="w-3 h-3 shrink-0 text-white/50" />
                       <Editable path={['personalInfo', 'driverLicense']} text={personalInfo.driverLicense} className="font-medium" />
                     </div>
                   )}
                   {personalInfo.website && (
-                    <div className="flex flex-col">
-                      <span className="text-[9px] uppercase text-white/40 font-bold">Web / Portfolyo</span>
+                    <div className="flex items-center gap-1.5">
+                      <Globe className="w-3 h-3 shrink-0 text-white/50" />
                       <span className="underline font-medium hover:text-white break-all [overflow-wrap:anywhere] max-w-full">
                         <Editable path={['personalInfo', 'website']} text={personalInfo.website} />
                       </span>
@@ -1978,50 +2064,50 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                 </div>
                 <div className={`${styles.density === 'compact' ? 'space-y-1.5' : 'space-y-2.5'} text-[10px] text-slate-300`}>
                   {personalInfo.phone && (
-                    <div>
-                      <p className="font-bold text-slate-400 text-[9px] uppercase">Telefon</p>
+                    <div className="flex items-center gap-1.5">
+                      <Phone className="w-3 h-3 shrink-0 text-amber-500" />
                       <Editable path={['personalInfo', 'phone']} text={personalInfo.phone} className="font-medium text-white" />
                     </div>
                   )}
                   {personalInfo.email && (
-                    <div>
-                      <p className="font-bold text-slate-400 text-[9px] uppercase">E-posta</p>
+                    <div className="flex items-center gap-1.5">
+                      <Mail className="w-3 h-3 shrink-0 text-amber-500" />
                       <Editable path={['personalInfo', 'email']} text={personalInfo.email} className="font-medium text-white break-all select-all" />
                     </div>
                   )}
                   {personalInfo.location && (
-                    <div>
-                      <p className="font-bold text-slate-400 text-[9px] uppercase">Adres / Konum</p>
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="w-3 h-3 shrink-0 text-amber-500" />
                       <Editable path={['personalInfo', 'location']} text={personalInfo.location} className="font-medium text-white" />
                     </div>
                   )}
                   {personalInfo.birthDate && (
-                    <div>
-                      <p className="font-bold text-slate-400 text-[9px] uppercase">Doğum Tarihi</p>
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="w-3 h-3 shrink-0 text-amber-500" />
                       <Editable path={['personalInfo', 'birthDate']} text={personalInfo.birthDate} className="font-medium text-white" />
                     </div>
                   )}
                   {personalInfo.birthPlace && (
-                    <div>
-                      <p className="font-bold text-slate-400 text-[9px] uppercase">Doğum Yeri</p>
+                    <div className="flex items-center gap-1.5">
+                      <MapPinned className="w-3 h-3 shrink-0 text-amber-500" />
                       <Editable path={['personalInfo', 'birthPlace']} text={personalInfo.birthPlace} className="font-medium text-white" />
                     </div>
                   )}
                   {personalInfo.maritalStatus && (
-                    <div>
-                      <p className="font-bold text-slate-400 text-[9px] uppercase">Medeni Durum</p>
+                    <div className="flex items-center gap-1.5">
+                      <Heart className="w-3 h-3 shrink-0 text-amber-500" />
                       <Editable path={['personalInfo', 'maritalStatus']} text={personalInfo.maritalStatus} className="font-medium text-white" />
                     </div>
                   )}
                   {personalInfo.driverLicense && (
-                    <div>
-                      <p className="font-bold text-slate-400 text-[9px] uppercase">Ehliyet</p>
+                    <div className="flex items-center gap-1.5">
+                      <Car className="w-3 h-3 shrink-0 text-amber-500" />
                       <Editable path={['personalInfo', 'driverLicense']} text={personalInfo.driverLicense} className="font-medium text-white" />
                     </div>
                   )}
                   {personalInfo.website && (
-                    <div>
-                      <p className="font-bold text-slate-400 text-[9px] uppercase">Websitesi</p>
+                    <div className="flex items-center gap-1.5">
+                      <Globe className="w-3 h-3 shrink-0 text-amber-500" />
                       <span className="underline text-amber-400 font-medium">
                         <Editable path={['personalInfo', 'website']} text={formatSocialUrl(personalInfo.website)} />
                       </span>
@@ -2167,50 +2253,50 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                 </div>
                 <div className={`${styles.density === 'compact' ? 'space-y-1.5' : 'space-y-3'} text-[10px] text-center text-white/90 font-serif`}>
                   {personalInfo.phone && (
-                    <div className="flex flex-col">
-                      <span className="text-[8px] uppercase tracking-wider text-white/40 font-sans font-bold">Telefon</span>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Phone className="w-3 h-3 shrink-0 text-white/50" />
                       <Editable path={['personalInfo', 'phone']} text={personalInfo.phone} className="font-medium" />
                     </div>
                   )}
                   {personalInfo.email && (
-                    <div className="flex flex-col">
-                      <span className="text-[8px] uppercase tracking-wider text-white/40 font-sans font-bold">E-posta</span>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Mail className="w-3 h-3 shrink-0 text-white/50" />
                       <Editable path={['personalInfo', 'email']} text={personalInfo.email} className="font-medium break-all" />
                     </div>
                   )}
                   {personalInfo.location && (
-                    <div className="flex flex-col">
-                      <span className="text-[8px] uppercase tracking-wider text-white/40 font-sans font-bold">Adres / Konum</span>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <MapPin className="w-3 h-3 shrink-0 text-white/50" />
                       <Editable path={['personalInfo', 'location']} text={personalInfo.location} className="font-medium" />
                     </div>
                   )}
                   {personalInfo.birthDate && (
-                    <div className="flex flex-col">
-                      <span className="text-[8px] uppercase tracking-wider text-white/40 font-sans font-bold">Doğum Tarihi</span>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Calendar className="w-3 h-3 shrink-0 text-white/50" />
                       <Editable path={['personalInfo', 'birthDate']} text={personalInfo.birthDate} className="font-medium" />
                     </div>
                   )}
                   {personalInfo.birthPlace && (
-                    <div className="flex flex-col">
-                      <span className="text-[8px] uppercase tracking-wider text-white/40 font-sans font-bold">Doğum Yeri</span>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <MapPinned className="w-3 h-3 shrink-0 text-white/50" />
                       <Editable path={['personalInfo', 'birthPlace']} text={personalInfo.birthPlace} className="font-medium" />
                     </div>
                   )}
                   {personalInfo.maritalStatus && (
-                    <div className="flex flex-col">
-                      <span className="text-[8px] uppercase tracking-wider text-white/40 font-sans font-bold">Medeni Durum</span>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Heart className="w-3 h-3 shrink-0 text-white/50" />
                       <Editable path={['personalInfo', 'maritalStatus']} text={personalInfo.maritalStatus} className="font-medium" />
                     </div>
                   )}
                   {personalInfo.driverLicense && (
-                    <div className="flex flex-col">
-                      <span className="text-[8px] uppercase tracking-wider text-white/40 font-sans font-bold">Ehliyet</span>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Car className="w-3 h-3 shrink-0 text-white/50" />
                       <Editable path={['personalInfo', 'driverLicense']} text={personalInfo.driverLicense} className="font-medium" />
                     </div>
                   )}
                   {personalInfo.website && (
-                    <div className="flex flex-col">
-                      <span className="text-[8px] uppercase tracking-wider text-white/40 font-sans font-bold">Websitesi</span>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Globe className="w-3 h-3 shrink-0 text-white/50" />
                       <span className="underline font-medium break-all max-w-full">
                         <Editable path={['personalInfo', 'website']} text={personalInfo.website} />
                       </span>
@@ -2256,6 +2342,11 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   <div className="space-y-2 text-left pl-2">
                     {skills.map((cat) => (
                       <div key={cat.id} className="space-y-1">
+                        {shouldShowCategoryHeader(cat.categoryName) && (
+                          <div className="text-[9px] uppercase tracking-wider text-white/50 font-sans font-bold mt-1.5 first:mt-0">
+                            {cat.categoryName}
+                          </div>
+                        )}
                         {cat.skills.map((sk, sIdx) => (
                           <div key={sIdx} className="text-white/90 text-[10.5px] font-serif leading-snug flex items-start gap-1.5 max-w-full">
                             <span className="text-white/60 select-none shrink-0">•</span>
@@ -2605,25 +2696,25 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                 <div className="space-y-2.5 text-[10px] text-slate-300">
                   {personalInfo.phone && (
                     <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      <Phone className="w-3 h-3 shrink-0 text-amber-500" />
                       <Editable path={['personalInfo', 'phone']} text={personalInfo.phone} className="text-white font-medium" />
                     </div>
                   )}
                   {personalInfo.email && (
                     <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      <Mail className="w-3 h-3 shrink-0 text-amber-500" />
                       <Editable path={['personalInfo', 'email']} text={personalInfo.email} className="text-white font-medium break-all" />
                     </div>
                   )}
                   {personalInfo.location && (
                     <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      <MapPin className="w-3 h-3 shrink-0 text-amber-500" />
                       <Editable path={['personalInfo', 'location']} text={personalInfo.location} className="text-white font-medium" />
                     </div>
                   )}
                   {personalInfo.birthDate && (
                     <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                      <Calendar className="w-3 h-3 shrink-0 text-amber-500" />
                       <div className="flex flex-col">
                         <span className="text-[8px] uppercase text-slate-400 font-bold">Doğum Tarihi</span>
                         <Editable path={['personalInfo', 'birthDate']} text={personalInfo.birthDate} className="text-white font-medium" />
@@ -2632,7 +2723,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   )}
                   {personalInfo.birthPlace && (
                     <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                      <MapPinned className="w-3 h-3 shrink-0 text-amber-500" />
                       <div className="flex flex-col">
                         <span className="text-[8px] uppercase text-slate-400 font-bold">Doğum Yeri</span>
                         <Editable path={['personalInfo', 'birthPlace']} text={personalInfo.birthPlace} className="text-white font-medium" />
@@ -2641,7 +2732,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   )}
                   {personalInfo.maritalStatus && (
                     <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                      <Heart className="w-3 h-3 shrink-0 text-amber-500" />
                       <div className="flex flex-col">
                         <span className="text-[8px] uppercase text-slate-400 font-bold">Medeni Durum</span>
                         <Editable path={['personalInfo', 'maritalStatus']} text={personalInfo.maritalStatus} className="text-white font-medium" />
@@ -2650,7 +2741,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   )}
                   {personalInfo.driverLicense && (
                     <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                      <Car className="w-3 h-3 shrink-0 text-amber-500" />
                       <div className="flex flex-col">
                         <span className="text-[8px] uppercase text-slate-400 font-bold">Ehliyet</span>
                         <Editable path={['personalInfo', 'driverLicense']} text={personalInfo.driverLicense} className="text-white font-medium" />
@@ -2659,7 +2750,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   )}
                   {personalInfo.website && (
                     <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                      <Globe className="w-3 h-3 shrink-0 text-amber-500" />
                       <div className="flex flex-col">
                         <span className="text-[8px] uppercase text-slate-400 font-bold">Websitesi</span>
                         <span className="underline text-amber-400 font-medium break-all">
@@ -2673,7 +2764,7 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                       <span className="text-[8px] uppercase text-slate-400 font-bold block">Sosyal Medya / Bağlantılar</span>
                       {socialLinks.map((link) => (
                         <div key={link.id} className="flex items-center gap-2 text-[9.5px]">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                          <Globe className="w-3 h-3 shrink-0 text-amber-500" />
                           <span className="text-amber-400 font-semibold shrink-0">{link.platform}:</span>
                           <span className="underline text-slate-300 break-all [overflow-wrap:anywhere] min-w-0">{formatSocialUrl(link.url)}</span>
                         </div>
