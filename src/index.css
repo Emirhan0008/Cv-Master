@@ -152,12 +152,19 @@
     page-break-inside: avoid !important;
   }
 
+  /*
+    DİKKAT — burada `padding: 0` / `background: transparent` / `border: none`
+    KULLANILMAZ (düzeltildi 16.11.2026). Bu kurallar yalnız "düzenleme
+    görünümünü" temizlemek için yazılmıştı ama tasarımın kendi dolgusunu da
+    siliyordu: proje teknoloji etiketleri `px-1.5 py-0.5 bg-slate-100` ile
+    çip olarak basılıyor; print'te dolgu ve zemin silinince aynı satır 9.8 px
+    daralıp 3.3 px kısalıyordu. 7 projede bu 23 px'e birikti ve "ekran ≠ PDF"
+    farkı doğdu (yazilim-2026, tüm şablonlar). Boş alanların yer tutucusu
+    zaten `print:hidden` olduğu için dolgu/zemin silmeye gerek yok.
+  */
   #cv-preview-page [contenteditable] {
     outline: none !important;
     box-shadow: none !important;
-    background: transparent !important;
-    border-bottom: none !important;
-    padding: 0 !important;
   }
 }
 

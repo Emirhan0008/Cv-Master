@@ -27,10 +27,20 @@ const args = process.argv.slice(2);
 const asJson = args.includes('--json');
 const onlyIdx = args.indexOf('--only');
 const templates = onlyIdx >= 0 ? args[onlyIdx + 1].split(',') : TEMPLATES;
+/*
+  --slug: hangi taslak doğrulanacak (varsayılan mavi-mega-rehber-2026).
+  Neden: araç yalnız PDR taslağına sabitlenmişti; üçüncü kez "yazılım CV'sini
+  de 11 şablonda doğrula" istendiğinde taslağı değiştirmek gerekiyordu.
+*/
+const slugIdx = args.indexOf('--slug');
+const slug = slugIdx >= 0 ? args[slugIdx + 1] : 'mavi-mega-rehber-2026';
+const draftPath = `W:/Cv-Master/cv-data/drafts/${slug}.json`;
+if (!fs.existsSync(draftPath)) {
+  console.error(`HATA: taslak bulunamadı: ${draftPath}`);
+  process.exit(1);
+}
 
-const base = JSON.parse(
-  fs.readFileSync('W:/Cv-Master/cv-data/drafts/mavi-mega-rehber-2026.json', 'utf8'),
-);
+const base = JSON.parse(fs.readFileSync(draftPath, 'utf8'));
 base.styles.pageGuide = false;
 
 const probe = probeFn;
@@ -97,18 +107,33 @@ function probeFn(data) {
   const cnt = (arr) => (arr || []).filter((x) => x && has(x)).length;
 
   // iletişim: değer + etiket tipi
+  /*
+    DEĞERLER TASLAKTAN OKUNUR, SABİT DEĞİL (düzeltme 16.11.2026):
+    önce '538 933' / 'gürsu' gibi sabitler yazılıydı; doğrulama yalnız
+    mavi-mega taslağını bildiği için başka taslakta (yazilim-2026) tüm
+    alanlar "yok" görünüyordu. Artık `data.personalInfo` kullanılır.
+  */
   const contact = {};
-  const map = {
-    phone: norm('538 933'),
-    email: norm('emirhan0008@gmail.com'),
-    location: norm('gürsu'),
-    website: norm('emirhanyilmaz.vercel.app'),
-    birthDate: norm('28.03.1995'),
-    birthPlace: norm('artvin'),
-    maritalStatus: norm('bekar'),
-    driverLicense: norm('ehliyet'),
+  const pi = data.personalInfo || {};
+  const compact = txtNorm.replace(/\s+/g, '');
+  const hasC = (s) => {
+    const needle = norm(s).replace(/\s+/g, '');
+    return needle.length > 1 && compact.includes(needle);
   };
-  for (const [k, v] of Object.entries(map)) contact[k] = txtNorm.includes(v);
+  const firstPart = (s) => String(s || '').split(/[/,·]/)[0].trim();
+  const stripProto = (s) => String(s || '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+
+  const map = {
+    phone: hasC(String(pi.phone || '').replace(/\s+/g, '')),
+    email: hasC(pi.email),
+    location: hasC(firstPart(pi.location)),
+    website: hasC(stripProto(pi.website)),
+    birthDate: hasC(pi.birthDate),
+    birthPlace: hasC(firstPart(pi.birthPlace)),
+    maritalStatus: hasC(pi.maritalStatus),
+    driverLicense: hasC(pi.driverLicense),
+  };
+  for (const [k, v] of Object.entries(map)) contact[k] = v;
 
   const wordLabels = ['telefon', 'e-posta', 'adres / konum', 'doğum tarihi', 'doğum yeri', 'medeni durum', 'ehliyet', 'websitesi'];
   const wordCount = wordLabels.filter((w) => txtNorm.includes(w)).length;
@@ -122,13 +147,13 @@ function probeFn(data) {
      iletişim DEĞERİNİN yanında (en fazla 3 üst ata içinde) lucide ikon
      aranır. */
   const valueNeedles = [
-    '538 933 5550',
-    'emirhan0008@gmail.com',
-    'Bursa / Gürsu',
-    'emirhanyilmaz.vercel.app',
-    '28.03.1995',
-    'Artvin / Yusufeli',
-  ];
+    pi.phone,
+    pi.email,
+    pi.location,
+    stripProto(pi.website),
+    pi.birthDate,
+    pi.birthPlace,
+  ].filter((v) => typeof v === 'string' && v.trim().length > 3);
   let withIcon = 0;
   for (const needle of valueNeedles) {
     const el = Array.from(root.querySelectorAll('*')).find(
@@ -166,8 +191,8 @@ function probeFn(data) {
   contact.codeLabels = codeCount;
   contact.lucide = lucide;
 
-  // beceri kategorileri
-  const cats = ['Okul Rehberliği', 'Öğrenci Desteği ve Takip', 'Dijital Araçlar'];
+  // beceri kategorileri — taslaktan okunur (sabit liste değil)
+  const cats = (data.skills || []).map((s) => s.categoryName).filter(Boolean);
   const catVisible = cats.filter((c) => has(c)).length;
 
   // geçersiz amber-550 → currentColor
@@ -231,7 +256,7 @@ for (const r of rows) {
   if (p.photo.kind !== 'YOK' && p.photo.rounded && !p.photo.clipped) issues.push(`${r.tpl}: fotoğraf print'te kırpılmıyor (kare riski)`);
   if (p.contact.labelStyle === 'harf') issues.push(`${r.tpl}: iletişimde harf kısaltması etiketi (${p.contact.abbrev})`);
   if (p.contact.labelStyle === 'eksik') issues.push(`${r.tpl}: iletişim ikonları eksik (${p.contact.iconPerField}/6 değer)`);
-  if (p.catVisible < 3) issues.push(`${r.tpl}: beceri kategorisi ${p.catVisible}/3`);
+  if (p.catVisible < p.counts.skillCats) issues.push(`${r.tpl}: beceri kategorisi ${p.catVisible}/${p.counts.skillCats}`);
   if (p.badBorder > 0) issues.push(`${r.tpl}: amber-550 geçersiz → ${p.badBorder} kenarlık currentColor`);
   if (Math.abs(p.contentHeight - r.screen.contentHeight) > 3)
     issues.push(`${r.tpl}: ekran/print yükseklik farkı ${p.contentHeight - r.screen.contentHeight}px`);
@@ -254,7 +279,7 @@ if (asJson) {
       H(p.contentHeight - r.screen.contentHeight),
       H(photo),
       H(p.contact.labelStyle),
-      H(p.catVisible + '/3'),
+      H(p.catVisible + '/' + p.counts.skillCats),
       H(p.badBorder || '-'),
     );
   }
