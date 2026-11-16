@@ -39,7 +39,21 @@ function probeFn(data) {
   const root = document.querySelector('#cv-preview-page');
   const rootBox = root.getBoundingClientRect();
   const txt = root.innerText || '';
-  const txtNorm = txt.toLowerCase().replace(/\s+/g, ' ');
+  /*
+    Türkçe büyük harf tuzağı (ölçüldü 16.11.2026): sayfa kökünde lang="tr"
+    olduğu için CSS `uppercase` doğru çalışıyor ("Rehberliği" → "REHBERLİĞİ").
+    innerText bu dönüşümü yansıtır ve JS `toLowerCase()` "İ" harfini
+    "i" + U+0307 (birleşik nokta) yapar → "rehberli̇ği̇" ≠ "rehberliği".
+    Bu yüzden tüm şablonlarda kategori 0/3 gibi SAHTE hata çıktı.
+    Çözüm: karşılaştırma öncesi birleşik işaretleri at.
+  */
+  const fold = (s) =>
+    String(s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ');
+  const txtNorm = fold(txt);
   const vis = (el) => {
     const cs = getComputedStyle(el);
     return cs.display !== 'none' && cs.visibility !== 'hidden' && el.getBoundingClientRect().height > 0;
@@ -78,7 +92,7 @@ function probeFn(data) {
   }
 
   // bölüm sayıları: id'ler her şablonda yok — metinden say
-  const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ');
+  const norm = fold;
   const has = (needle) => txtNorm.includes(norm(needle));
   const cnt = (arr) => (arr || []).filter((x) => x && has(x)).length;
 

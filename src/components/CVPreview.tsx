@@ -29,6 +29,7 @@ import {
   Minimize2,
   Mail,
   Phone,
+  Share2,
   Undo
 } from 'lucide-react';
 
@@ -1781,6 +1782,11 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
         <div
           id="cv-preview-page"
           ref={containerRef}
+          /* lang="tr" ZORUNLU: CSS `uppercase` dil duyarlıdır. lang olmadan
+             "Emirhan Yılmaz" → "EMIRHAN YILMAZ" (noktasız I) çıkıyordu.
+             lang="tr" ile i → İ eşlemesi doğru: "EMİRHAN YILMAZ".
+             Chromium'da piksel karşılaştırmasıyla doğrulandı. */
+          lang="tr"
           style={{ 
             ...bgStyles, 
             ...is3DStyle,
@@ -2515,7 +2521,8 @@ export default function CVPreview({ cvData, setCvData, onUndo, canUndo }: CVPrev
                   )}
                   {socialLinks && socialLinks.length > 0 && (
                     <div className="flex items-start gap-2 pt-1 border-t border-white/10">
-                      <span className="text-[10px] font-bold text-amber-400 shrink-0 select-none">S:</span>
+                      {/* Harf kısaltması ("S:") YASAK — diğer satırlar gibi ikon kullanılır. */}
+                      <Share2 className="w-3 h-3 text-amber-400 shrink-0 select-none mt-[1px]" />
                       <div className="flex flex-col space-y-0.5">
                         <span className="text-[8px] uppercase text-white/40 font-bold">Sosyal Medya</span>
                         {socialLinks.map((link) => (
